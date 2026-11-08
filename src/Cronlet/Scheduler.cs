@@ -252,24 +252,26 @@ internal sealed class Scheduler
 
         try
         {
-            // 启动前定夺：已经停止，或这次运行已被 kill 策略替换（RunId 被覆盖）时，
-            // 直接放弃启动，避免留下一个绕过停止/替换的子进程。
-            bool startable;
-            lock (_gate) { startable = !_stopRequested && st.RunId == runId; }
-            if (!startable) return;
-
             var psi = BuildStartInfo(task, out string? cwd);
 
             using var proc = new Process { StartInfo = psi };
             proc.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stdout", e.Data); };
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stderr", e.Data); };
 
+            // 最终校验、启动与句柄登记放在同一临界区：否则 Stop 或 kill 可能卡在
+            // 三者之间，看到一个还没启动的 Process，或让已被替换的请求照样启动。
+            bool started;
             lock (_gate)
             {
-                if (st.RunId == runId) st.Process = proc;
+                started = !_stopRequested && st.RunId == runId;
+                if (started)
+                {
+                    st.Process = proc;
+                    proc.Start();
+                }
             }
+            if (!started) return;
 
-            proc.Start();
             ChildJob.Assign(proc);
             Log.Event("task-start", ("task", task.name), ("pid", proc.Id));
 
@@ -389,19 +391,34 @@ internal sealed class Scheduler
         try
         {
             var cron = CronExpression.Parse(task.cron);
-            var next = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Local);
-            if (next is null)
+            var nominal = cron.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Local);
+            if (nominal is null)
             {
                 Log.Event("schedule-none", ("task", task.name), ("cron", task.cron));
                 return;
             }
-            int jitter = task.jitter > 0 ? Random.Shared.Next(0, task.jitter + 1) : 0;
-            _queue.Enqueue(task, next.Value.AddSeconds(jitter));
+
+            var nextNominal = cron.GetNextOccurrence(nominal.Value, TimeZoneInfo.Local);
+            int jitter = ClampJitter(task.jitter, nominal.Value, nextNominal);
+            _queue.Enqueue(task, nominal.Value.AddSeconds(jitter));
         }
         catch (Exception ex)
         {
             Log.Event("enqueue-error", ("task", task.name), ("message", ex.Message));
         }
+    }
+
+    /// <summary>
+    /// 抖动不能把本次触发推过下一次名义触发，否则下一次会被 <c>GetNextOccurrence</c> 跳过。
+    /// 间隔越短，可用的抖动余量越小；没有余量时按 0 处理。
+    /// </summary>
+    internal static int ClampJitter(int configured, DateTime nominal, DateTime? nextNominal)
+    {
+        if (configured <= 0) return 0;
+        if (nextNominal is null) return configured;
+
+        int room = (int)Math.Floor((nextNominal.Value - nominal).TotalSeconds) - 1;
+        return room <= 0 ? 0 : Math.Min(configured, room);
     }
 
     private async Task WaitOrWakeAsync(TimeSpan delay, Task wake)

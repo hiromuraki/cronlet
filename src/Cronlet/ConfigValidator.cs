@@ -12,11 +12,20 @@ internal static class ConfigValidator
     public static void Validate(RunnerConfig config)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var logFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var t in config.tasks)
         {
             string label = string.IsNullOrWhiteSpace(t.name) ? "(未命名)" : t.name;
             if (string.IsNullOrWhiteSpace(t.name)) throw new Exception("存在没有 name 的任务");
             if (!names.Add(t.name)) throw new Exception($"任务名称重复: {t.name}");
+
+            // 日志文件名会把符号折成下划线，两个不同的任务名可能落到同一个文件
+            string logFile = Log.TaskFileName(t.name);
+            if (logFiles.TryGetValue(logFile, out string? other))
+                throw new Exception($"任务 {label}: 与任务 {other} 映射到同一个日志文件 {logFile}");
+            logFiles[logFile] = t.name;
+
             if (string.IsNullOrWhiteSpace(t.command)) throw new Exception($"任务 {label}: command 不能为空");
             if (t.jitter < 0) throw new Exception($"任务 {label}: jitter 不能为负");
             if (t.timeout < 0) throw new Exception($"任务 {label}: timeout 不能为负");
@@ -38,30 +47,9 @@ internal static class ConfigValidator
                 throw new Exception($"任务 {label}: cron 非法 ({t.cron}): {ex.Message}");
             }
 
-            double? minInterval = MinIntervalSeconds(cron);
-            if (minInterval is not null && t.jitter >= minInterval)
-            {
-                throw new Exception(
-                    $"任务 {label}: jitter={t.jitter}s 必须小于 cron 最小间隔 {minInterval:0}s");
-            }
+            // 语法合法但永远不触发的表达式（例如 2 月 31 日）在这里就拦掉
+            if (t.enabled && cron.GetNextOccurrence(DateTime.UtcNow, Tz) is null)
+                throw new Exception($"任务 {label}: cron 永远不会触发 ({t.cron})");
         }
-    }
-
-    /// <summary>采样未来若干次 occurrence，取最小间隔（秒）；无法采样时返回 null。</summary>
-    private static double? MinIntervalSeconds(CronExpression cron)
-    {
-        var current = cron.GetNextOccurrence(DateTime.UtcNow, Tz);
-        if (current is null) return null;
-
-        double? min = null;
-        for (int i = 0; i < 128; i++)
-        {
-            var next = cron.GetNextOccurrence(current.Value, Tz);
-            if (next is null) break;
-            double seconds = (next.Value - current.Value).TotalSeconds;
-            if (min is null || seconds < min) min = seconds;
-            current = next;
-        }
-        return min;
     }
 }

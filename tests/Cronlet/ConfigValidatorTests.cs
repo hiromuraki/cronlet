@@ -102,18 +102,34 @@ public class ConfigValidatorTests
     }
 
     [Fact]
-    public void Jitter_at_min_interval_is_rejected()
+    public void Cron_that_never_fires_is_rejected()
     {
         var task = Valid();
-        task.jitter = 300; // */5 * * * * 的间隔正好 300s
-        Assert.Contains("jitter", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        task.cron = "0 0 31 2 *";
+        Assert.Contains("永远不会触发", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
     }
 
     [Fact]
-    public void Jitter_below_min_interval_passes()
+    public void Impossible_cron_is_allowed_when_task_is_disabled()
     {
         var task = Valid();
-        task.jitter = 299;
+        task.enabled = false;
+        task.cron = "0 0 31 2 *";
+        ConfigValidator.Validate(Wrap(task));
+    }
+
+    [Fact]
+    public void Names_mapping_to_the_same_log_file_are_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid("a/b"), Valid("a_b"))));
+        Assert.Contains("日志文件", ex.Message);
+    }
+
+    [Fact]
+    public void Jitter_is_accepted_without_a_static_interval_check()
+    {
+        var task = Valid();
+        task.jitter = 7200; // 超过间隔时由排程按实际余量截断
         ConfigValidator.Validate(Wrap(task));
     }
 

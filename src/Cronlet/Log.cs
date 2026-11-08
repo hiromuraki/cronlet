@@ -43,7 +43,7 @@ internal static class Log
         {
             try
             {
-                Append(TaskFile(task), BuildLine("task-output",
+                Append(TaskFileName(task), BuildLine("task-output",
                     new (string, object?)[] { ("task", task), ("stream", stream), ("line", line) }));
             }
             catch (Exception ex)
@@ -53,7 +53,7 @@ internal static class Log
         }
     }
 
-    private static string TaskFile(string task)
+    internal static string TaskFileName(string task)
     {
         var name = new StringBuilder(task.Length);
         foreach (char c in task)

@@ -62,4 +62,22 @@ public class SchedulerTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData(7200, 3600, 3599)]
+    [InlineData(10, 120, 10)]
+    [InlineData(300, 120, 119)]
+    [InlineData(5, 1, 0)]
+    public void ClampJitter_keeps_trigger_before_the_next_occurrence(
+        int configured, int intervalSeconds, int expected)
+    {
+        var nominal = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var next = nominal.AddSeconds(intervalSeconds);
+
+        Assert.Equal(expected, Scheduler.ClampJitter(configured, nominal, next));
+    }
+
+    [Fact]
+    public void ClampJitter_keeps_config_when_there_is_no_next_occurrence() =>
+        Assert.Equal(7200, Scheduler.ClampJitter(7200, DateTime.UtcNow, null));
 }

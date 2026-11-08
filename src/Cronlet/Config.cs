@@ -41,7 +41,7 @@ internal static class ConfigLoader
 #   command     pwsh 命令；相对路径以 exe 目录为当前目录
 #               例：./scripts/login.ps1   或   echo hello
 #   cron        5 段 unix cron：分 时 日 月 周（本地时区）
-#   jitter      0..jitter 秒随机延迟；必须小于 cron 间隔，否则启动报错
+#   jitter      0..jitter 秒随机延迟；会被限制在下一次触发之前
 #   timeout     秒；0 表示不限制，超时杀进程树
 #   overlap     上次未结束时的策略：skip | kill | queue
 #   cwd         工作目录；空则用 exe 目录
@@ -52,7 +52,7 @@ name = "example"
 enabled = false
 command = "./scripts/example.ps1"   # 也可以直接写一条命令，例如 "echo hello"
 cron = "*/5 * * * *"                # 分 时 日 月 周（本地时区）
-jitter = 10                         # 0..jitter 秒随机延迟，必须小于 cron 间隔
+jitter = 10                         # 0..jitter 秒随机延迟，不会推过下一次触发
 timeout = 60                        # 秒，0 表示不限制
 overlap = "skip"                    # skip | kill | queue
 cwd = ""                            # 工作目录，空则用 exe 目录

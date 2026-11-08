@@ -2,22 +2,32 @@ namespace HiroMuraki.Cronlet;
 
 internal static class Program
 {
+    private const int ExitConfigError = 2;
+    private const int ExitStartupError = 1;
+
     [STAThread]
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
+        bool headless = args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase))
+                        || !Environment.UserInteractive;
+
         try
         {
-            Run(args);
+            return Run(args, headless);
         }
         catch (Exception ex)
         {
             Log.Event("fatal", ("message", ex.Message));
-            MessageBox.Show($"Cronlet 启动失败：\n\n{ex}", "Cronlet",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!headless)
+            {
+                MessageBox.Show($"Cronlet 启动失败：\n\n{ex}", "Cronlet",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            return ExitStartupError;
         }
     }
 
-    private static void Run(string[] args)
+    private static int Run(string[] args, bool headless)
     {
         ApplicationConfiguration.Initialize();
 
@@ -26,14 +36,12 @@ internal static class Program
             if (e.ExceptionObject is Exception ex) Log.Event("unhandled-exception", ("message", ex.Message));
         };
 
-        bool headless = args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase))
-                       || !Environment.UserInteractive;
-
         var instance = SingleInstance.TryAcquire();
         if (instance is null)
         {
+            // 已有实例在跑：不算启动失败，退出码保持 0
             Log.Event("instance-exit", ("reason", "already-running"), ("headless", headless));
-            return;
+            return 0;
         }
 
         using var instanceHandle = instance;
@@ -52,7 +60,7 @@ internal static class Program
                 MessageBox.Show($"配置错误：\n\n{ex.Message}\n\n配置文件：{ConfigLoader.ConfigPath}",
                     "Cronlet", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            return;
+            return ExitConfigError;
         }
 
         using var cts = new CancellationTokenSource();
@@ -93,5 +101,6 @@ internal static class Program
             });
 
         Application.Run(context);
+        return 0;
     }
 }
