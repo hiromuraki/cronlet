@@ -92,43 +92,53 @@ internal static class ShellResolver
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(ProbeTimeout);
 
-            var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars, deadline.Token);
-            var stderr = DrainAsync(proc.StandardError, MaxErrorChars, deadline.Token);
-            var all = Task.WhenAll(proc.WaitForExitAsync(deadline.Token), stdout, stderr);
-
             try
             {
-                all.Wait(ProbeTimeout + TimeSpan.FromSeconds(2), deadline.Token);
-            }
-            catch
-            {
-                // 取消或超时：下面统一清理
-            }
+                var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars, deadline.Token);
+                var stderr = DrainAsync(proc.StandardError, MaxErrorChars, deadline.Token);
+                var all = Task.WhenAll(proc.WaitForExitAsync(deadline.Token), stdout, stderr);
 
-            if (!all.IsCompletedSuccessfully)
+                try
+                {
+                    all.Wait(ProbeTimeout + TimeSpan.FromSeconds(2), deadline.Token);
+                }
+                catch
+                {
+                    // 取消或超时：下面统一清理
+                }
+
+                // 不能只看聚合任务是否"成功"：子进程先退出、写端还在时，读任务被取消
+                // 也会让 WhenAll 变成 canceled；反过来，读任务若把取消吞成正常返回，
+                // WhenAll 又会显示成功。两个信号一起看才可靠。
+                if (deadline.IsCancellationRequested || !all.IsCompletedSuccessfully)
+                {
+                    try { Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(2)); } catch { }
+
+                    return (false, ct.IsCancellationRequested
+                        ? "已取消"
+                        : $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
+                }
+
+                if (proc.ExitCode != 0)
+                {
+                    string message = stderr.GetAwaiter().GetResult().Trim();
+                    return (false, $"exit={proc.ExitCode}{(message.Length > 0 ? ": " + message : "")}");
+                }
+
+                string? version = FirstLine(stdout.GetAwaiter().GetResult());
+                if (version is null) return (false, "没有输出版本号");
+                if (!int.TryParse(version, out _)) return (false, $"输出不是版本号: {version}");
+
+                return (true, null);
+            }
+            finally
             {
-                // 超时与取消共用一处清理：结束整棵树、显式关掉读取端、等读任务收尾
+                // 所有退出路径都终结进程树并显式关掉读端，
+                // 释放与否不再取决于聚合任务的状态
                 try { proc.Kill(true); } catch { }
                 try { proc.StandardOutput.Dispose(); } catch { }
                 try { proc.StandardError.Dispose(); } catch { }
-                try { Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(2)); } catch { }
-
-                return (false, ct.IsCancellationRequested
-                    ? "已取消"
-                    : $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
             }
-
-            if (proc.ExitCode != 0)
-            {
-                string message = stderr.GetAwaiter().GetResult().Trim();
-                return (false, $"exit={proc.ExitCode}{(message.Length > 0 ? ": " + message : "")}");
-            }
-
-            string? version = FirstLine(stdout.GetAwaiter().GetResult());
-            if (version is null) return (false, "没有输出版本号");
-            if (!int.TryParse(version, out _)) return (false, $"输出不是版本号: {version}");
-
-            return (true, null);
         }
         catch (Exception ex)
         {
@@ -161,17 +171,15 @@ internal static class ShellResolver
                 if (room > 0) kept.Append(buffer, 0, Math.Min(room, read));
             }
         }
-        catch (OperationCanceledException)
-        {
-            // 截止时间到：已经读到多少算多少
-        }
         catch (IOException)
         {
-            // 读取端被关掉（进程结束或被显式释放）
+            // 读取端被关掉（进程结束或被显式释放），这一路读完了
         }
         catch (ObjectDisposedException)
         {
         }
+        // OperationCanceledException 不吞：取消必须体现为任务状态，
+        // 否则调用方会把"被取消的读取"当成正常结束
 
         return kept.ToString();
     }
