@@ -95,4 +95,50 @@ public class TomlConfigTests
         var ex = Assert.Throws<Exception>(() => TomlConfig.Parse(text));
         Assert.Contains(expected, ex.Message);
     }
+    [Fact]
+    public void Duplicate_task_key_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => TomlConfig.Parse("[[tasks]]\nenabled = false\nenabled = true"));
+        Assert.Contains("重复", ex.Message);
+    }
+
+    [Fact]
+    public void Duplicate_top_level_key_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => TomlConfig.Parse("pwsh = \"a\"\npwsh = \"b\""));
+        Assert.Contains("重复", ex.Message);
+    }
+
+    [Fact]
+    public void Unescaped_quote_inside_string_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => TomlConfig.Parse("[[tasks]]\ncommand = \"Write-Output \"ok\"\""));
+        Assert.Contains("多余内容", ex.Message);
+    }
+
+    [Fact]
+    public void Unterminated_string_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => TomlConfig.Parse("[[tasks]]\ncommand = \"unterminated"));
+        Assert.Contains("没有闭合", ex.Message);
+    }
+
+    [Fact]
+    public void Triple_quoted_string_is_rejected_with_a_clear_message()
+    {
+        var ex = Assert.Throws<Exception>(() => TomlConfig.Parse("[[tasks]]\ncommand = \"\"\"multi\"\"\""));
+        Assert.Contains("多行字符串", ex.Message);
+    }
+
+    [Fact]
+    public void Underscored_integer_is_accepted()
+        => Assert.Equal(1000, Assert.Single(TomlConfig.Parse("[[tasks]]\njitter = 1_000").tasks).jitter);
+
+    [Fact]
+    public void Unicode_escape_is_decoded()
+        => Assert.Equal("作", Assert.Single(TomlConfig.Parse("[[tasks]]\ncommand = \"\\u4f5c\"").tasks).command);
+
+    [Fact]
+    public void Empty_task_array_is_accepted()
+        => Assert.Empty(TomlConfig.Parse("tasks = []").tasks);
 }

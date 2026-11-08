@@ -4,10 +4,11 @@ using System.Text;
 namespace HiroMuraki.Cronlet;
 
 /// <summary>
-/// 极简 TOML 子集解析器：只支持本程序配置用到的语法
-/// —— 行注释、<c>[[tasks]]</c>、<c>key = value</c>，值可以是双引号字符串（含转义）、
-/// 单引号字面字符串、整数、true/false。
+/// 极简 TOML 子集解析器。支持的语法只有本程序配置用到的这些：
+/// 行注释、<c>[[tasks]]</c>、<c>key = value</c>；值是双引号字符串（含 \" \\ \n \r \t \uXXXX）、
+/// 单引号字面字符串、整数（允许下划线分隔）、true/false；顶层额外支持 <c>tasks = []</c>。
 /// 其余语法一律报错而不是猜——反射式 TOML 库在 trimming / NativeAOT 下不可用。
+/// 兼容范围写在这里，也就是唯一的行为契约。
 /// </summary>
 internal static class TomlConfig
 {
@@ -15,6 +16,8 @@ internal static class TomlConfig
     {
         var config = new RunnerConfig();
         TaskConfig? current = null;
+        var topKeys = new HashSet<string>(StringComparer.Ordinal);
+        var taskKeys = new HashSet<string>(StringComparer.Ordinal);
         int lineNo = 0;
 
         foreach (string rawLine in text.Split('\n'))
@@ -23,6 +26,12 @@ internal static class TomlConfig
             string line = StripComment(rawLine).Trim();
             if (line.Length == 0) continue;
 
+            if (line.StartsWith("\"\"\"", StringComparison.Ordinal) ||
+                line.StartsWith("'''", StringComparison.Ordinal))
+            {
+                throw new Exception($"第 {lineNo} 行: 不支持多行字符串（三引号），请写成单行");
+            }
+
             if (line.StartsWith("[[", StringComparison.Ordinal))
             {
                 if (!string.Equals(line, "[[tasks]]", StringComparison.Ordinal))
@@ -30,6 +39,7 @@ internal static class TomlConfig
 
                 current = new TaskConfig();
                 config.tasks.Add(current);
+                taskKeys.Clear();
                 continue;
             }
 
@@ -43,11 +53,27 @@ internal static class TomlConfig
 
             if (current is null)
             {
-                if (key == "pwsh") config.pwsh = ReadString(key, value);
-                else throw new Exception($"第 {lineNo} 行: 顶层未知字段 {key}");
+                if (!topKeys.Add(key))
+                    throw new Exception($"第 {lineNo} 行: 顶层键 {key} 重复");
+
+                switch (key)
+                {
+                    case "pwsh":
+                        config.pwsh = ReadString(key, value);
+                        break;
+                    case "tasks":
+                        if (!string.Equals(value, "[]", StringComparison.Ordinal))
+                            throw new Exception($"第 {lineNo} 行: tasks 只支持空数组 []");
+                        break;
+                    default:
+                        throw new Exception($"第 {lineNo} 行: 顶层未知字段 {key}");
+                }
             }
             else
             {
+                if (!taskKeys.Add(key))
+                    throw new Exception($"第 {lineNo} 行: 任务键 {key} 重复");
+
                 ApplyTask(current, key, value, lineNo);
             }
         }
@@ -102,13 +128,29 @@ internal static class TomlConfig
 
     internal static string ReadString(string key, string text)
     {
+        if (text.StartsWith("\"\"\"", StringComparison.Ordinal) ||
+            text.StartsWith("'''", StringComparison.Ordinal))
+        {
+            throw new Exception($"{key}: 不支持多行字符串（三引号），请写成单行");
+        }
+
         if (text.Length < 2) throw new Exception($"{key} 的值必须用引号包起来");
 
         char quote = text[0];
         if (quote is not ('"' or '\'')) throw new Exception($"{key} 的值必须用引号包起来");
-        if (text[^1] != quote) throw new Exception($"{key} 的引号没有闭合");
 
-        string inner = text[1..^1];
+        int end = -1;
+        for (int i = 1; i < text.Length; i++)
+        {
+            if (quote == '"' && text[i] == '\\') { i++; continue; }
+            if (text[i] == quote) { end = i; break; }
+        }
+
+        if (end < 0) throw new Exception($"{key} 的引号没有闭合");
+        if (end != text.Length - 1)
+            throw new Exception($"{key} 的字符串后面有多余内容: {text[(end + 1)..]}");
+
+        string inner = text[1..end];
         return quote == '\'' ? inner : Unescape(key, inner);
     }
 
@@ -130,15 +172,26 @@ internal static class TomlConfig
             i++;
             if (i >= text.Length) throw new Exception($"{key} 的转义不完整");
 
-            sb.Append(text[i] switch
+            switch (text[i])
             {
-                '"' => '"',
-                '\\' => '\\',
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                _ => throw new Exception($"{key} 不支持的转义 \\{text[i]}"),
-            });
+                case '"': sb.Append('"'); break;
+                case '\\': sb.Append('\\'); break;
+                case 'n': sb.Append('\n'); break;
+                case 'r': sb.Append('\r'); break;
+                case 't': sb.Append('\t'); break;
+                case 'u':
+                {
+                    if (i + 4 >= text.Length) throw new Exception($"{key} 的 \\u 转义不完整");
+                    string hex = text.Substring(i + 1, 4);
+                    if (!ushort.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort code))
+                        throw new Exception($"{key} 的 \\u 转义非法: \\u{hex}");
+                    sb.Append((char)code);
+                    i += 4;
+                    break;
+                }
+                default:
+                    throw new Exception($"{key} 不支持的转义 \\{text[i]}");
+            }
         }
 
         return sb.ToString();
@@ -153,7 +206,8 @@ internal static class TomlConfig
 
     private static int ReadInt(string key, string text)
     {
-        if (!int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int value))
+        string cleaned = text.Replace("_", "", StringComparison.Ordinal);
+        if (!int.TryParse(cleaned, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int value))
             throw new Exception($"{key} 必须是整数");
 
         return value;

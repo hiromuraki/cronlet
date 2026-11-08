@@ -15,7 +15,7 @@ internal sealed class TrayContext : IDisposable
     private readonly NotifyIcon<DefaultPopupMenuHandler> _icon;
     private readonly string _configPath;
 
-    public TrayContext(string configPath, Action onExit, Func<Task<string?>> reload, CancellationToken ct)
+    public TrayContext(string configPath, Action onExit, Func<Task<string?>> reload)
     {
         _configPath = configPath;
 
@@ -31,10 +31,12 @@ internal sealed class TrayContext : IDisposable
         _menu.Items.Add(SeparatorItem.Instance);
         _menu.Items.Add(new MenuItem { Text = "退出", Clicked = _ => onExit() });
 
+        // 关闭只走 Dispose 一条路：把令牌交给 DotTray 会让"取消令牌"和"Dispose"
+        // 各自投递一次 WM_CLOSE，后一次在窗口已销毁时抛 Win32Exception(1400)。
         IntPtr handle = AppIcon.Extract();
         try
         {
-            _icon = NotifyIcon.Run(handle, _menu, ct);
+            _icon = NotifyIcon.Run(handle, _menu, CancellationToken.None);
         }
         finally
         {
@@ -97,7 +99,11 @@ internal sealed class TrayContext : IDisposable
         }
     }
 
-    public void Dispose() => _icon.Dispose();
+    public void Dispose()
+    {
+        _icon.Dispose();
+        ((IDisposable)_menu).Dispose();   // DotTray 是显式接口实现
+    }
 
 
 }

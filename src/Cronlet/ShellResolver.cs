@@ -64,6 +64,8 @@ internal static class ShellResolver
     /// </summary>
     public static (bool Ok, string? Error) Probe(string path, CancellationToken ct = default)
     {
+        if (ct.IsCancellationRequested) return (false, "已取消");
+
         try
         {
             var psi = new ProcessStartInfo

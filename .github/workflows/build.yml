@@ -61,5 +61,7 @@ jobs:
         run: >
           gh release create "aot-${{ github.run_number }}"
           artifacts/publish/Cronlet/release_win-x64/Cronlet.exe
+          --target ${{ github.sha }}
+          --prerelease
           --title "AOT build ${{ github.run_number }}"
           --notes "NativeAOT experiment build from ${{ github.sha }}"

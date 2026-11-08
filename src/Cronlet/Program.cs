@@ -94,8 +94,7 @@ internal static class Program
                             Log.Event("config-error", ("message", ex.Message));
                             return "配置错误: " + ex.Message;
                         }
-                    },
-                    cts.Token);
+                    });
             }
 
             // 主线程只负责等待退出信号；调度与托盘各自跑在后台线程上
@@ -119,17 +118,23 @@ internal static class Program
             menu.Items.Add(new MenuItem { Text = "关闭", Clicked = _ => cts.Cancel() });
 
             IntPtr handle = AppIcon.Extract();
-            using var icon = NotifyIcon.Run(handle, menu, cts.Token);
-            AppIcon.Release(handle);
-            icon.SetToolTip("Cronlet 启动失败");
-            icon.ShowBalloon(new BalloonNotification
+            try
             {
-                Title = "Cronlet",
-                Message = message,
-                Icon = BalloonNotificationIcon.Error,
-            });
+                using var icon = NotifyIcon.Run(handle, menu, cts.Token);
+                icon.SetToolTip("Cronlet 启动失败");
+                icon.ShowBalloon(new BalloonNotification
+                {
+                    Title = "Cronlet",
+                    Message = message,
+                    Icon = BalloonNotificationIcon.Error,
+                });
 
-            cts.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(6));
+                cts.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(6));
+            }
+            finally
+            {
+                AppIcon.Release(handle);
+            }
         }
         catch
         {
