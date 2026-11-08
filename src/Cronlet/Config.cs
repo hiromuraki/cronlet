@@ -1,5 +1,4 @@
 using System.Text;
-using Tomlyn;
 
 namespace HiroMuraki.Cronlet;
 
@@ -77,9 +76,6 @@ cwd = ""                            # 工作目录，空则用 exe 目录
     public static RunnerConfig LoadOrCreate(string path)
     {
         EnsureExists(path);
-
-        string text = File.ReadAllText(path);
-        var config = TomlSerializer.Deserialize<RunnerConfig>(text);
-        return config ?? throw new Exception("配置为空");
+        return TomlConfig.Parse(File.ReadAllText(path));
     }
 }

@@ -1,4 +1,3 @@
-using Tomlyn;
 using Xunit;
 
 namespace HiroMuraki.Cronlet.Tests;
@@ -8,7 +7,7 @@ public class ConfigLoaderTests
     [Fact]
     public void Default_template_deserializes()
     {
-        var config = TomlSerializer.Deserialize<RunnerConfig>(ConfigLoader.DefaultTemplate);
+        var config = TomlConfig.Parse(ConfigLoader.DefaultTemplate);
         Assert.NotNull(config);
         var task = Assert.Single(config!.tasks);
         Assert.Equal("example", task.name);

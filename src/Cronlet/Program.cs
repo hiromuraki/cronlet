@@ -118,7 +118,9 @@ internal static class Program
             using var menu = new DefaultPopupMenuHandler();
             menu.Items.Add(new MenuItem { Text = "关闭", Clicked = _ => cts.Cancel() });
 
-            using var icon = NotifyIcon.Run(TrayContext.IconPath, menu, cts.Token);
+            IntPtr handle = AppIcon.Extract();
+            using var icon = NotifyIcon.Run(handle, menu, cts.Token);
+            AppIcon.Release(handle);
             icon.SetToolTip("Cronlet 启动失败");
             icon.ShowBalloon(new BalloonNotification
             {

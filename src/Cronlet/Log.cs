@@ -1,7 +1,5 @@
 using System.Globalization;
 using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 
 namespace HiroMuraki.Cronlet;
 
@@ -24,10 +22,6 @@ internal static class Log
     internal const string TruncatedSuffix = "…[truncated]";
 
     private static readonly object Gate = new();
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
 
     public static void Event(string eventName, params (string Key, object? Value)[] fields)
     {
@@ -92,18 +86,78 @@ internal static class Log
     /// <summary>任务名已被校验限制为字母、数字、下划线和短横线，可以直接拼进文件名。</summary>
     internal static string TaskFileName(string name) => $"task-{name}.jsonl";
 
+    /// <summary>
+    /// 手工拼 JSON：只支持本程序用到的值类型（字符串、布尔、整数、null）。
+    /// 这样不依赖 System.Text.Json 的反射序列化，trimming / NativeAOT 下可用。
+    /// </summary>
     private static string BuildLine(string eventName, (string Key, object? Value)[] fields)
     {
         var sb = new StringBuilder(256);
-        sb.Append("{\"ts\":").Append(JsonSerializer.Serialize(Timestamp(), JsonOpts));
-        sb.Append(",\"event\":").Append(JsonSerializer.Serialize(eventName, JsonOpts));
+        sb.Append("{\"ts\":");
+        AppendString(sb, Timestamp());
+        sb.Append(",\"event\":");
+        AppendString(sb, eventName);
+
         foreach (var (key, value) in fields)
         {
-            sb.Append(',').Append(JsonSerializer.Serialize(key, JsonOpts)).Append(':');
-            sb.Append(value is null ? "null" : JsonSerializer.Serialize(value, value.GetType(), JsonOpts));
+            sb.Append(',');
+            AppendString(sb, key);
+            sb.Append(':');
+            AppendValue(sb, value);
         }
+
         sb.Append('}');
         return sb.ToString();
+    }
+
+    private static void AppendValue(StringBuilder sb, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                sb.Append("null");
+                break;
+            case string s:
+                AppendString(sb, s);
+                break;
+            case bool b:
+                sb.Append(b ? "true" : "false");
+                break;
+            case int i:
+                sb.Append(i.ToString(CultureInfo.InvariantCulture));
+                break;
+            case long l:
+                sb.Append(l.ToString(CultureInfo.InvariantCulture));
+                break;
+            default:
+                AppendString(sb, value.ToString() ?? "");
+                break;
+        }
+    }
+
+    private static void AppendString(StringBuilder sb, string value)
+    {
+        sb.Append('"');
+
+        foreach (char c in value)
+        {
+            switch (c)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                default:
+                    if (c < 0x20) sb.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                    else sb.Append(c);
+                    break;
+            }
+        }
+
+        sb.Append('"');
     }
 
     private static string Timestamp() =>

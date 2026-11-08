@@ -7,6 +7,7 @@ namespace HiroMuraki.Cronlet;
 /// <summary>
 /// 托盘外壳：打开配置文件 / 打开脚本目录 / 打开日志目录 / 重载配置 / 退出。
 /// 基于 DotTray（直接用 Win32 shell API），不依赖 WinForms，因此可以走 NativeAOT。
+/// 图标从 exe 自身的图标资源里取 HICON，不需要额外的 .ico 文件。
 /// </summary>
 internal sealed class TrayContext : IDisposable
 {
@@ -30,12 +31,19 @@ internal sealed class TrayContext : IDisposable
         _menu.Items.Add(SeparatorItem.Instance);
         _menu.Items.Add(new MenuItem { Text = "退出", Clicked = _ => onExit() });
 
-        _icon = NotifyIcon.Run(IconPath, _menu, ct);
+        IntPtr handle = AppIcon.Extract();
+        try
+        {
+            _icon = NotifyIcon.Run(handle, _menu, ct);
+        }
+        finally
+        {
+            AppIcon.Release(handle);
+        }
+
         _icon.SetToolTip("Cronlet");
     }
 
-    /// <summary>托盘图标路径：与 exe 同目录的 runner.ico。</summary>
-    internal static string IconPath => Path.Combine(Paths.Base, "runner.ico");
 
     private void Reload(MenuItem item, Func<Task<string?>> reload)
     {
@@ -90,4 +98,6 @@ internal sealed class TrayContext : IDisposable
     }
 
     public void Dispose() => _icon.Dispose();
+
+
 }
