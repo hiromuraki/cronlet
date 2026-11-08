@@ -81,12 +81,10 @@ internal static class Log
     private static string Timestamp() =>
         DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz", CultureInfo.InvariantCulture);
 
-    /// <summary>日志目录（与 exe 同级的 logs/）。</summary>
-    internal static string LogDirectory => Path.Combine(AppContext.BaseDirectory, "logs");
 
     private static void Append(string file, string line)
     {
-        string dir = LogDirectory;
+        string dir = Paths.Logs;
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, file);
         RotateIfNeeded(path);
@@ -139,7 +137,7 @@ internal static class Log
     {
         try
         {
-            string dir = LogDirectory;
+            string dir = Paths.Logs;
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "log-error.txt"),
                 $"{DateTimeOffset.Now:O} {ex}\n");

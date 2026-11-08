@@ -10,7 +10,7 @@
 [[tasks]]
 name = "campus-login"
 enabled = true
-script_file = "eportal-login.ps1"   # 或者 command = "echo hi"，二选一
+command = "./scripts/eportal-login.ps1"
 cron = "*/2 * * * *"
 jitter = 10
 timeout = 120
@@ -22,15 +22,14 @@ cwd = ""
 |---|---|
 | `name` | 任务名，唯一（大小写不敏感） |
 | `enabled` | 是否启用 |
-| `script_file` | 脚本文件：绝对路径直接使用；相对路径**先按 exe 目录解析，找不到再到 `scripts/` 下找一次** |
-| `command` | pwsh 命令，直接交给 `pwsh -Command` 执行 |
+| `command` | 要执行的 pwsh 命令，原样交给 `pwsh -Command`；相对路径以 exe 目录为当前目录 |
 | `cron` | 5 段 unix cron（分 时 日 月 周），本地时区 |
 | `jitter` | 秒，触发时间 = cron 时间 + `random(0..jitter)`；必须小于 cron 的最小间隔，否则启动报错 |
 | `timeout` | 秒，0 表示不限制；超时杀整个进程树 |
 | `overlap` | 上次未结束时的策略：`skip`（默认）/ `kill` / `queue` |
 | `cwd` | 工作目录，空则用脚本所在目录 |
 
-`script_file` 与 `command` **必须且只能填一个**，同时填或都不填都会在启动/重载时报错。
+`command` 是唯一入口：脚本就写 `./scripts/xxx.ps1`，临时命令就直接写命令本身。
 
 ## 运行模式
 

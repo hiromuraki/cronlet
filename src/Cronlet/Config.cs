@@ -16,11 +16,8 @@ internal sealed class TaskConfig
     public string name { get; set; } = "";
     public bool enabled { get; set; } = true;
 
-    /// <summary>脚本文件路径。与 <see cref="command"/> 二选一。</summary>
-    public string? script_file { get; set; }
-
-    /// <summary>pwsh 命令。与 <see cref="script_file"/> 二选一。</summary>
-    public string? command { get; set; }
+    /// <summary>要执行的 pwsh 命令。相对路径以 <see cref="Paths.Base"/> 为当前目录。</summary>
+    public string command { get; set; } = "";
 
     public string cron { get; set; } = "";
     public int jitter { get; set; }
@@ -31,7 +28,7 @@ internal sealed class TaskConfig
 
 internal static class ConfigLoader
 {
-    public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "config.toml");
+    public static string ConfigPath => Path.Combine(Paths.Base, "config.toml");
 
     public const string DefaultTemplate = """
 # ==============================================================
@@ -41,26 +38,24 @@ internal static class ConfigLoader
 #
 #   name        任务名（唯一，日志里用它标识）
 #   enabled     是否启用
-#   script_file 脚本文件：绝对路径直接使用；相对路径先按 exe 目录解析，
-#               找不到再到 scripts/ 下找一次
-#   command     pwsh 命令
-#               上面两项必须且只能填一个
+#   command     pwsh 命令；相对路径以 exe 目录为当前目录
+#               例：./scripts/login.ps1   或   echo hello
 #   cron        5 段 unix cron：分 时 日 月 周（本地时区）
 #   jitter      0..jitter 秒随机延迟；必须小于 cron 间隔，否则启动报错
 #   timeout     秒；0 表示不限制，超时杀进程树
 #   overlap     上次未结束时的策略：skip | kill | queue
-#   cwd         工作目录；空则用脚本所在目录
+#   cwd         工作目录；空则用 exe 目录
 # ==============================================================
 
 [[tasks]]
 name = "example"
 enabled = false
-command = "echo hello"          # 脚本文件用 script_file，命令用 command
-cron = "*/5 * * * *"            # 分 时 日 月 周（本地时区）
-jitter = 10                     # 0..jitter 秒随机延迟，必须小于 cron 间隔
-timeout = 60                    # 秒，0 表示不限制
-overlap = "skip"                # skip | kill | queue
-cwd = ""                        # 工作目录，空则用脚本所在目录
+command = "./scripts/example.ps1"   # 也可以直接写一条命令，例如 "echo hello"
+cron = "*/5 * * * *"                # 分 时 日 月 周（本地时区）
+jitter = 10                         # 0..jitter 秒随机延迟，必须小于 cron 间隔
+timeout = 60                        # 秒，0 表示不限制
+overlap = "skip"                    # skip | kill | queue
+cwd = ""                            # 工作目录，空则用 exe 目录
 """;
 
     public static RunnerConfig LoadOrCreate(string path)

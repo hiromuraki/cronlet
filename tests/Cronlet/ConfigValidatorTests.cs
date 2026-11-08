@@ -35,48 +35,11 @@ public class ConfigValidatorTests
     }
 
     [Fact]
-    public void Both_script_file_and_command_are_rejected()
+    public void Empty_command_is_rejected()
     {
         var task = Valid();
-        task.script_file = "whatever.ps1";
-        Assert.Contains("不能同时", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
-    }
-
-    [Fact]
-    public void Neither_script_file_nor_command_is_rejected()
-    {
-        var task = Valid();
-        task.command = null;
-        Assert.Contains("二选一", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
-    }
-
-    [Fact]
-    public void Missing_script_file_is_rejected()
-    {
-        var task = Valid();
-        task.command = null;
-        task.script_file = "no-such-script.ps1";
-        Assert.Contains("找不到脚本", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
-    }
-
-    [Fact]
-    public void Existing_script_file_passes()
-    {
-        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string file = Path.Combine(dir, "real.ps1");
-        File.WriteAllText(file, "");
-        try
-        {
-            var task = Valid();
-            task.command = null;
-            task.script_file = file;
-            ConfigValidator.Validate(Wrap(task));
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
+        task.command = "  ";
+        Assert.Contains("command", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
     }
 
     [Fact]

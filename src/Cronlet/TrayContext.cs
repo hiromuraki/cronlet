@@ -20,8 +20,8 @@ internal sealed class TrayContext : ApplicationContext
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add("打开配置文件", null, (_, _) => OpenConfig());
-        _menu.Items.Add("打开脚本目录", null, (_, _) => OpenFolder(ScriptResolver.ScriptsDirectory));
-        _menu.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Log.LogDirectory));
+        _menu.Items.Add("打开脚本目录", null, (_, _) => OpenFolder(Paths.Scripts));
+        _menu.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Paths.Logs));
 
         var reloadItem = new ToolStripMenuItem("重载配置");
         reloadItem.Click += async (_, _) =>

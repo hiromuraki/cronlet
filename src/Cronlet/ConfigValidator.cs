@@ -17,17 +17,7 @@ internal static class ConfigValidator
             string label = string.IsNullOrWhiteSpace(t.name) ? "(未命名)" : t.name;
             if (string.IsNullOrWhiteSpace(t.name)) throw new Exception("存在没有 name 的任务");
             if (!names.Add(t.name)) throw new Exception($"任务名称重复: {t.name}");
-
-            bool hasFile = !string.IsNullOrWhiteSpace(t.script_file);
-            bool hasCommand = !string.IsNullOrWhiteSpace(t.command);
-            if (hasFile && hasCommand)
-                throw new Exception($"任务 {label}: script_file 与 command 不能同时设置");
-            if (!hasFile && !hasCommand)
-                throw new Exception($"任务 {label}: script_file 与 command 必须二选一");
-
-            if (hasFile && ScriptResolver.Resolve(t.script_file!) is null)
-                throw new Exception($"任务 {label}: 找不到脚本 {t.script_file}（已查 exe 目录与 scripts/）");
-
+            if (string.IsNullOrWhiteSpace(t.command)) throw new Exception($"任务 {label}: command 不能为空");
             if (t.jitter < 0) throw new Exception($"任务 {label}: jitter 不能为负");
             if (t.timeout < 0) throw new Exception($"任务 {label}: timeout 不能为负");
             if (t.timeout > MaxTimeoutSeconds)

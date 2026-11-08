@@ -13,7 +13,7 @@ public class ConfigLoaderTests
         var task = Assert.Single(config!.tasks);
         Assert.Equal("example", task.name);
         Assert.False(task.enabled);
-        Assert.Equal("echo hello", task.command);
+        Assert.Equal("./scripts/example.ps1", task.command);
         Assert.Equal("*/5 * * * *", task.cron);
         Assert.Equal(10, task.jitter);
         Assert.Equal(60, task.timeout);
