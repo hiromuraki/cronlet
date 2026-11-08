@@ -14,6 +14,7 @@ internal sealed class ChildJob : IDisposable
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
 
+    private readonly object _gate = new();
     private IntPtr _handle;
 
     private ChildJob(IntPtr handle) => _handle = handle;
@@ -76,19 +77,26 @@ internal sealed class ChildJob : IDisposable
     }
 
     /// <summary>终止 Job 里的所有进程（包括已经脱离父进程的后代）。</summary>
+    /// <summary>终止 Job 里的所有进程。与 Dispose 共用一把锁，避免句柄被关闭后继续使用。</summary>
     public void Terminate()
     {
-        if (_handle == IntPtr.Zero) return;
+        lock (_gate)
+        {
+            if (_handle == IntPtr.Zero) return;
 
-        try { TerminateJobObject(_handle, 1); } catch { }
+            try { TerminateJobObject(_handle, 1); } catch { }
+        }
     }
 
     public void Dispose()
     {
-        if (_handle == IntPtr.Zero) return;
+        lock (_gate)
+        {
+            if (_handle == IntPtr.Zero) return;
 
-        CloseHandle(_handle);
-        _handle = IntPtr.Zero;
+            CloseHandle(_handle);
+            _handle = IntPtr.Zero;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]

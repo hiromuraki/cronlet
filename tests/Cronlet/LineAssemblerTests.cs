@@ -97,4 +97,23 @@ public class LineAssemblerTests
         Assert.Empty(FeedAll(assembler));
         Assert.Null(assembler.Flush());
     }
+    [Fact]
+    public void Truncation_drops_a_cluster_that_would_be_split()
+    {
+        var assembler = new LineAssembler(8192);
+
+        // 8191 个 a 之后是 e + 组合重音：整个簇应被丢弃，而不是留下半个 e
+        string line = new string('a', 8191) + "e\u0301z";
+        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+
+        Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
+    }
+
+    [Fact]
+    public void Truncation_keeps_full_ascii_prefix()
+    {
+        var assembler = new LineAssembler(4);
+
+        Assert.Equal("abcd" + Log.TruncatedSuffix, Assert.Single(FeedAll(assembler, "abcdef\n")));
+    }
 }

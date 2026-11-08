@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace HiroMuraki.Cronlet;
@@ -50,8 +51,26 @@ internal sealed class LineAssembler
 
             _skipNextLf = false;
 
-            if (_line.Length < MaxChars) _line.Append(c);
-            else if (_truncate) _truncated = true;
+            if (!_truncated && _line.Length < MaxChars)
+            {
+                _line.Append(c);
+                continue;
+            }
+
+            if (_truncate && !_truncated)
+            {
+                // 截断点若落在簇中间（当前字符是组合标记），把整个簇丢掉，
+                // 否则会留下半个字形：e 而没有重音
+                if (IsCombining(c) && _line.Length > 0)
+                {
+                    int i = _line.Length - 1;
+                    while (i >= 0 && IsCombining(_line[i])) i--;
+                    if (i >= 0) i--;
+                    _line.Length = Math.Max(i + 1, 0);
+                }
+
+                _truncated = true;
+            }
         }
 
         return lines;
@@ -59,6 +78,12 @@ internal sealed class LineAssembler
 
     /// <summary>流结束时取出残留内容；没有残留返回 null。</summary>
     public string? Flush() => _line.Length == 0 && !_truncated ? null : TakeLine();
+
+    private static bool IsCombining(char c) =>
+        CharUnicodeInfo.GetUnicodeCategory(c) is
+            UnicodeCategory.NonSpacingMark or
+            UnicodeCategory.SpacingCombiningMark or
+            UnicodeCategory.EnclosingMark;
 
     private bool _truncated;
     private bool _skipNextLf;

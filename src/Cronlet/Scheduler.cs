@@ -271,6 +271,7 @@ internal sealed class Scheduler
         var sw = Stopwatch.StartNew();
 
         ChildJob? job = null;
+        Process? proc = null;
 
         try
         {
@@ -282,7 +283,7 @@ internal sealed class Scheduler
 
             var psi = BuildStartInfo(task, _pwsh);
 
-            using var proc = new Process { StartInfo = psi };
+            proc = new Process { StartInfo = psi };
 
             // 最终校验、启动与句柄登记放在同一临界区：否则 Stop 或 kill 可能卡在
             // 三者之间，看到一个还没启动的 Process，或让已被替换的请求照样启动。
@@ -312,42 +313,37 @@ internal sealed class Scheduler
             var stdout = PumpAsync(proc.StandardOutput, task.name, "stdout", readCts.Token);
             var stderr = PumpAsync(proc.StandardError, task.name, "stderr", readCts.Token);
 
-            if (task.timeout > 0)
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(task.timeout));
-                try
-                {
-                    await proc.WaitForExitAsync(cts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    timedOut = true;
+            // 超时覆盖"进程退出 + 两路读取"的联合等待：启动进程先退出、后代还占着
+            // 输出管道时，只看进程退出会让较短的 timeout 形同虚设
+            var all = Task.WhenAll(proc.WaitForExitAsync(), stdout, stderr);
 
-                    // 先终止 Job：中间进程退出后，末级后代已经不在进程树里，
-                    // 只有 Job 能把它一起收掉
-                    job?.Terminate();
-                    try { proc.Kill(true); } catch { }
-
-                    using var killCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    try { await proc.WaitForExitAsync(killCts.Token); } catch { }
-                }
-            }
-            else
-            {
-                await proc.WaitForExitAsync();
-            }
-
-            // WaitForExitAsync 返回即已退出，无需再等；超时分支里的宽限已经给过
-            if (proc.HasExited) exitCode = proc.ExitCode;
-
-            // 让两路读取把剩余输出排空，但不无限等
             try
             {
-                await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5));
+                if (task.timeout > 0)
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(task.timeout));
+                    await all.WaitAsync(cts.Token);
+                }
+                else
+                {
+                    await all;
+                }
+
+                if (proc.HasExited) exitCode = proc.ExitCode;
             }
-            catch
+            catch (OperationCanceledException)
             {
+                // 先标记超时再清理：Job 覆盖已经脱离进程树的后代
+                timedOut = true;
+
+                job?.Terminate();
+                try { proc.Kill(true); } catch { }
+
+                using var graceCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try { await proc.WaitForExitAsync(graceCts.Token); } catch { }
+
                 readCts.Cancel();
+                try { await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
             }
         }
         catch (Exception ex)
@@ -356,6 +352,15 @@ internal sealed class Scheduler
         }
         finally
         {
+            // 显式关掉两路读端：Process 自己的 Dispose 不负责它们，
+            // 不关的话句柄要等 GC，外部持有写端时读端会一直活着
+            if (proc is not null)
+            {
+                try { proc.StandardOutput.Dispose(); } catch { }
+                try { proc.StandardError.Dispose(); } catch { }
+                proc.Dispose();
+            }
+
             // 关闭句柄：仍留在 Job 里的后代（例如任务起的后台进程）会被一并结束
             job?.Dispose();
             Complete(task, st, runId, exitCode, timedOut, sw.ElapsedMilliseconds);
