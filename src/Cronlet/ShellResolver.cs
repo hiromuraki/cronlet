@@ -91,18 +91,26 @@ internal static class ShellResolver
             var stderr = DrainAsync(proc.StandardError, MaxErrorChars);
             var all = Task.WhenAll(proc.WaitForExitAsync(ct), stdout, stderr);
 
+            bool completed;
             try
             {
-                if (!all.Wait(ProbeTimeout, ct))
-                {
-                    try { proc.Kill(true); } catch { }
-                    return (false, $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
-                }
+                completed = all.Wait(ProbeTimeout, ct);
             }
             catch (OperationCanceledException)
             {
+                completed = false;
+            }
+
+            if (!completed)
+            {
+                // 超时与取消共用一处清理：结束整棵树，再等读取端收尾，
+                // 避免留下还在等管道的读任务
                 try { proc.Kill(true); } catch { }
-                return (false, "已取消");
+                try { Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(2)); } catch { }
+
+                return (false, ct.IsCancellationRequested
+                    ? "已取消"
+                    : $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
             }
 
             if (proc.ExitCode != 0)
