@@ -4,6 +4,9 @@ namespace HiroMuraki.Cronlet;
 
 public static class ConfigValidator
 {
+    /// <summary>timeout 上限。计时器能表达的最大延迟约 49.7 天，这里留足余量取 30 天。</summary>
+    public const int MaxTimeoutSeconds = 30 * 24 * 60 * 60;
+
     private static readonly TimeZoneInfo Tz = TimeZoneInfo.Local;
 
     public static void Validate(RunnerConfig config)
@@ -17,6 +20,8 @@ public static class ConfigValidator
             if (string.IsNullOrWhiteSpace(t.script)) throw new Exception($"任务 {label}: script 不能为空");
             if (t.jitter < 0) throw new Exception($"任务 {label}: jitter 不能为负");
             if (t.timeout < 0) throw new Exception($"任务 {label}: timeout 不能为负");
+            if (t.timeout > MaxTimeoutSeconds)
+                throw new Exception($"任务 {label}: timeout 不能超过 {MaxTimeoutSeconds}s（30 天）");
             if (t.overlap is not ("skip" or "kill" or "queue"))
                 throw new Exception($"任务 {label}: overlap 只能是 skip / kill / queue");
 

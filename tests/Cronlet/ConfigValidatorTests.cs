@@ -58,6 +58,22 @@ public class ConfigValidatorTests
         Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task)));
     }
 
+    [Fact]
+    public void Timeout_at_limit_passes()
+    {
+        var task = Valid();
+        task.timeout = ConfigValidator.MaxTimeoutSeconds;
+        ConfigValidator.Validate(Wrap(task));
+    }
+
+    [Fact]
+    public void Timeout_above_limit_is_rejected()
+    {
+        var task = Valid();
+        task.timeout = ConfigValidator.MaxTimeoutSeconds + 1;
+        Assert.Contains("timeout", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
     [Theory]
     [InlineData("skip")]
     [InlineData("kill")]

@@ -136,7 +136,8 @@ public sealed class Scheduler
 
                 lock (_queueGate)
                 {
-                    while (!_stopRequested && _queue.TryPeek(out var task, out var due) && due <= DateTime.UtcNow)
+                    while (!_stopRequested && !_reloading &&
+                           _queue.TryPeek(out var task, out var due) && due <= DateTime.UtcNow)
                     {
                         _queue.Dequeue();
                         Fire(task);
@@ -347,18 +348,29 @@ public sealed class Scheduler
                 }
             }
 
-            if (rerun && !_stopRequested && IsStillActive(task))
+            if (rerun)
             {
-                Fire(task);
+                TryRerun(task);
             }
         }
     }
 
-    private bool IsStillActive(TaskConfig task)
+    /// <summary>
+    /// 补跑排队的任务。与重载互斥：重载窗口内的补跑直接丢弃（重载会按新配置重排），
+    /// 且只按名字从**当前**配置里取任务，避免重载后用旧命令再跑一次。
+    /// </summary>
+    private void TryRerun(TaskConfig finished)
     {
         lock (_queueGate)
         {
-            return _config.tasks.Any(t => t.enabled && string.Equals(t.name, task.name, StringComparison.OrdinalIgnoreCase));
+            if (_stopRequested || _reloading) return;
+
+            var current = _config.tasks.FirstOrDefault(t =>
+                t.enabled && string.Equals(t.name, finished.name, StringComparison.OrdinalIgnoreCase));
+            if (current is null) return;
+
+            Log.Event("rerun", ("task", current.name));
+            Fire(current);
         }
     }
 
@@ -379,22 +391,11 @@ public sealed class Scheduler
         psi.ArgumentList.Add("-ExecutionPolicy");
         psi.ArgumentList.Add("Bypass");
 
-        // 强制子进程用 UTF-8 输出（否则重定向时是系统 ANSI 代码页，中文会乱码）
-        const string prelude = "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);";
-
-        var file = ScriptResolver.Resolve(task.script);
-        if (file is not null)
-        {
-            var quoted = file.Replace("'", "''");
-            psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add(
-                $"{prelude} try {{ & '{quoted}'; exit $LASTEXITCODE }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}");
-        }
-        else
-        {
-            psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add($"{prelude} {task.script}; exit $LASTEXITCODE");
-        }
+        var file = ScriptResolver.LooksLikePath(task.script) ? ScriptResolver.Resolve(task.script) : null;
+        psi.ArgumentList.Add("-Command");
+        psi.ArgumentList.Add(file is not null
+            ? CommandWrapper.ForScript(file)
+            : CommandWrapper.ForCommand(task.script));
 
         cwd = !string.IsNullOrWhiteSpace(task.cwd)
             ? task.cwd!

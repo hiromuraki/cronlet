@@ -90,7 +90,7 @@ internal static class Log
         File.AppendAllText(path, line + "\n", new UTF8Encoding(false));
     }
 
-    /// <summary>超过高水位时，把文件裁剪到最近的低水位长度（从行首开始，避免切坏 JSON）。</summary>
+    /// <summary>超过高水位时，把文件裁剪到最近的低水位长度（只保留完整记录，避免切坏 JSON）。</summary>
     private static void RotateIfNeeded(string path)
     {
         try
@@ -108,18 +108,28 @@ internal static class Log
                 tail = ms.ToArray();
             }
 
-            var newline = Array.IndexOf(tail, (byte)'\n');
-            if (newline >= 0 && newline + 1 < tail.Length)
-            {
-                tail = tail[(newline + 1)..];
-            }
-
-            File.WriteAllBytes(path, tail);
+            File.WriteAllBytes(path, RotateTail(tail));
         }
         catch (Exception ex)
         {
             DebugWrite(ex);
         }
+    }
+
+    /// <summary>
+    /// 从低水位窗口里裁出完整的记录：丢掉窗口开头的残行，再丢掉可能不完整的末行。
+    /// 窗口里没有任何完整记录时返回空数组，而不是把半行写回文件。
+    /// </summary>
+    internal static byte[] RotateTail(byte[] tail)
+    {
+        var first = Array.IndexOf(tail, (byte)'\n');
+        if (first < 0) return [];
+
+        var keep = tail[(first + 1)..];
+        var last = Array.LastIndexOf(keep, (byte)'\n');
+        if (last < 0) return [];
+
+        return last + 1 < keep.Length ? keep[..(last + 1)] : keep;
     }
 
     private static void DebugWrite(Exception ex)
