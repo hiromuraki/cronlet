@@ -1,6 +1,12 @@
 using System.Text;
+using Tomlyn;
+using Tomlyn.Serialization;
 
 namespace HiroMuraki.Cronlet;
+
+/// <summary>源生成的绑定，避免反射序列化在 trimming / NativeAOT 下不可用。</summary>
+[TomlSerializable(typeof(RunnerConfig))]
+internal partial class TomlContext : TomlSerializerContext;
 
 /// <summary>
 /// config.toml 模型。属性名刻意用小写，与 TOML key 一一对应。
@@ -76,6 +82,12 @@ cwd = ""                            # 工作目录，空则用 exe 目录
     public static RunnerConfig LoadOrCreate(string path)
     {
         EnsureExists(path);
-        return TomlConfig.Parse(File.ReadAllText(path));
+        return Parse(File.ReadAllText(path));
+    }
+
+    internal static RunnerConfig Parse(string text)
+    {
+        var config = TomlSerializer.Deserialize<RunnerConfig>(text, TomlContext.Default);
+        return config ?? throw new Exception("配置为空");
     }
 }

@@ -64,20 +64,21 @@ internal static class Log
     {
         if (Encoding.UTF8.GetByteCount(line) <= MaxLineBytes) return line;
 
-        // 逐簇扫描到上限即停：不为整行分配字形边界数组，巨行也不会额外吃掉几十 MiB
+        // 逐簇扫描到上限即停：不为整行分配边界数组，也不为每个簇生成子字符串
         int cut = 0;
         int used = 0;
-        var walker = StringInfo.GetTextElementEnumerator(line);
+        var rest = line.AsSpan();
 
-        while (walker.MoveNext())
+        while (!rest.IsEmpty)
         {
-            string element = walker.GetTextElement();
-            int size = Encoding.UTF8.GetByteCount(element);
+            int length = StringInfo.GetNextTextElementLength(rest);
+            int size = Encoding.UTF8.GetByteCount(rest[..length]);
 
             if (used + size > MaxLineBytes) break;
 
             used += size;
-            cut += element.Length;
+            cut += length;
+            rest = rest[length..];
         }
 
         return string.Concat(line.AsSpan(0, cut), TruncatedSuffix);

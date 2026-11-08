@@ -20,6 +20,7 @@
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.13.0" />
     <PackageReference Include="DotTray" Version="3.0.0" />
+    <PackageReference Include="Tomlyn" Version="2.11.0" />
   </ItemGroup>
 
 </Project>

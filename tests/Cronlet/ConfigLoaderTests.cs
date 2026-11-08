@@ -7,7 +7,7 @@ public class ConfigLoaderTests
     [Fact]
     public void Default_template_deserializes()
     {
-        var config = TomlConfig.Parse(ConfigLoader.DefaultTemplate);
+        var config = ConfigLoader.Parse(ConfigLoader.DefaultTemplate);
         Assert.NotNull(config);
         var task = Assert.Single(config!.tasks);
         Assert.Equal("example", task.name);

@@ -87,25 +87,30 @@ internal static class ShellResolver
             // 探测进程也挂进 Job：宿主被强杀时不会留下一个还在跑的 pwsh
             ChildJob.TryAssign(proc, out _);
 
-            var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars);
-            var stderr = DrainAsync(proc.StandardError, MaxErrorChars);
-            var all = Task.WhenAll(proc.WaitForExitAsync(ct), stdout, stderr);
+            // 一个截止时间同时约束进程退出与两路读取：取消或超时后读取任务自己结束，
+            // 不会留下仍在等外部写端的读任务
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(ProbeTimeout);
 
-            bool completed;
+            var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars, deadline.Token);
+            var stderr = DrainAsync(proc.StandardError, MaxErrorChars, deadline.Token);
+            var all = Task.WhenAll(proc.WaitForExitAsync(deadline.Token), stdout, stderr);
+
             try
             {
-                completed = all.Wait(ProbeTimeout, ct);
+                all.Wait(ProbeTimeout + TimeSpan.FromSeconds(2), deadline.Token);
             }
-            catch (OperationCanceledException)
+            catch
             {
-                completed = false;
+                // 取消或超时：下面统一清理
             }
 
-            if (!completed)
+            if (!all.IsCompletedSuccessfully)
             {
-                // 超时与取消共用一处清理：结束整棵树，再等读取端收尾，
-                // 避免留下还在等管道的读任务
+                // 超时与取消共用一处清理：结束整棵树、显式关掉读取端、等读任务收尾
                 try { proc.Kill(true); } catch { }
+                try { proc.StandardOutput.Dispose(); } catch { }
+                try { proc.StandardError.Dispose(); } catch { }
                 try { Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(2)); } catch { }
 
                 return (false, ct.IsCancellationRequested
@@ -142,16 +147,30 @@ internal static class ShellResolver
     /// 持续排空一路管道，只保留前 <paramref name="keep"/> 个字符。
     /// 读到底而不是"读完首行就撒手"，否则剩余输出会填满管道把子进程卡住。
     /// </summary>
-    private static async Task<string> DrainAsync(StreamReader reader, int keep)
+    private static async Task<string> DrainAsync(StreamReader reader, int keep, CancellationToken ct)
     {
         char[] buffer = new char[4096];
         var kept = new StringBuilder(keep);
 
-        int read;
-        while ((read = await reader.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+        try
         {
-            int room = keep - kept.Length;
-            if (room > 0) kept.Append(buffer, 0, Math.Min(room, read));
+            int read;
+            while ((read = await reader.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
+            {
+                int room = keep - kept.Length;
+                if (room > 0) kept.Append(buffer, 0, Math.Min(room, read));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 截止时间到：已经读到多少算多少
+        }
+        catch (IOException)
+        {
+            // 读取端被关掉（进程结束或被显式释放）
+        }
+        catch (ObjectDisposedException)
+        {
         }
 
         return kept.ToString();
