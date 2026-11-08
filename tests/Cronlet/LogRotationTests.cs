@@ -37,12 +37,40 @@ public class LogRotationTests
         => Assert.Equal("hi", Log.TruncateLine("hi"));
 
     [Fact]
-    public void Long_line_is_truncated_at_the_limit()
+    public void Long_line_is_truncated_at_the_byte_limit()
     {
-        string text = new string('a', Log.MaxLineLength + 100);
+        string text = new string('a', Log.MaxLineBytes + 100);
         string result = Log.TruncateLine(text);
 
-        Assert.StartsWith(new string('a', Log.MaxLineLength), result, StringComparison.Ordinal);
-        Assert.EndsWith("truncated]", result, StringComparison.Ordinal);
+        Assert.Equal(new string('a', Log.MaxLineBytes) + Log.TruncatedSuffix, result);
+    }
+
+    [Fact]
+    public void Multi_byte_characters_are_cut_on_a_character_boundary()
+    {
+        string text = new string('作', 4000); // 每个 3 字节，合计 12000
+        string result = Log.TruncateLine(text);
+
+        Assert.EndsWith(Log.TruncatedSuffix, result, StringComparison.Ordinal);
+
+        string body = result[..^Log.TruncatedSuffix.Length];
+        Assert.True(Encoding.UTF8.GetByteCount(body) <= Log.MaxLineBytes, "截断后不能超过字节上限");
+        Assert.DoesNotContain('\uFFFD', body);
+        Assert.All(body, c => Assert.Equal('作', c));
+    }
+
+    [Fact]
+    public void Surrogate_pairs_are_not_split()
+    {
+        string text = string.Concat(Enumerable.Repeat("😀", 3000)); // 每个 4 字节
+        string result = Log.TruncateLine(text);
+
+        string body = result[..^Log.TruncatedSuffix.Length];
+        Assert.True(Encoding.UTF8.GetByteCount(body) <= Log.MaxLineBytes);
+        Assert.DoesNotContain('\uFFFD', body);
+        for (int i = 0; i < body.Length; i += 2)
+        {
+            Assert.True(char.IsHighSurrogate(body[i]) && char.IsLowSurrogate(body[i + 1]));
+        }
     }
 }

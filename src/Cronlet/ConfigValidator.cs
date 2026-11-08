@@ -68,6 +68,10 @@ internal static class ConfigValidator
         if (resolved is null)
             throw new Exception($"找不到 PowerShell: {shell}（可用 pwsh 配置项指定完整路径）");
 
+        var probe = ShellResolver.Probe(resolved);
+        if (!probe.Ok)
+            throw new Exception($"PowerShell 无法运行: {resolved}（{probe.Error}）");
+
         return resolved;
     }
 

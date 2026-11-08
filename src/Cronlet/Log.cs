@@ -10,7 +10,7 @@ namespace HiroMuraki.Cronlet;
 ///   logs/runner.jsonl      —— Runner 自身事件
 ///   logs/task-&lt;name&gt;.jsonl —— 每个任务的 stdout/stderr
 /// 每次写入时打开、写完即关闭；按高低水位轮转：超过 16MB 时裁剪到最近 8MB。
-/// 单条输出行超过 <see cref="MaxLineLength"/> 会被截断，避免一条巨行把窗口挤满、
+/// 单条输出行超过 <see cref="MaxLineBytes"/> 会被截断，避免一条巨行把窗口挤满、
 /// 让轮转把整份历史清掉。
 /// </summary>
 internal static class Log
@@ -18,10 +18,10 @@ internal static class Log
     private const long HighWatermark = 16L * 1024 * 1024;
     private const long LowWatermark = HighWatermark / 2;
 
-    /// <summary>单条输出保留的最大字符数。</summary>
-    internal const int MaxLineLength = 8 * 1024;
+    /// <summary>单条输出保留的最大 UTF-8 字节数（不含截断标记）。</summary>
+    internal const int MaxLineBytes = 8 * 1024;
 
-    private const string TruncatedSuffix = "…[truncated]";
+    internal const string TruncatedSuffix = "…[truncated]";
 
     private static readonly object Gate = new();
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -62,9 +62,32 @@ internal static class Log
         }
     }
 
-    /// <summary>单条输出超过上限时截断，避免一条巨行挤满轮转窗口。</summary>
-    internal static string TruncateLine(string line) =>
-        line.Length <= MaxLineLength ? line : string.Concat(line.AsSpan(0, MaxLineLength), TruncatedSuffix);
+    /// <summary>
+    /// 单条输出超过上限时截断，避免一条巨行挤满轮转窗口。上限按 UTF-8 字节计，
+    /// 截断点落在完整的字形簇（grapheme cluster）边界上，不会切出半个字符或半个代理对。
+    /// </summary>
+    internal static string TruncateLine(string line)
+    {
+        if (Encoding.UTF8.GetByteCount(line) <= MaxLineBytes) return line;
+
+        int[] boundaries = StringInfo.ParseCombiningCharacters(line);
+        int cut = 0;
+        int used = 0;
+
+        for (int i = 0; i < boundaries.Length; i++)
+        {
+            int start = boundaries[i];
+            int end = i + 1 < boundaries.Length ? boundaries[i + 1] : line.Length;
+            int size = Encoding.UTF8.GetByteCount(line.AsSpan(start, end - start));
+
+            if (used + size > MaxLineBytes) break;
+
+            used += size;
+            cut = end;
+        }
+
+        return string.Concat(line.AsSpan(0, cut), TruncatedSuffix);
+    }
 
     /// <summary>任务名已被校验限制为字母、数字、下划线和短横线，可以直接拼进文件名。</summary>
     internal static string TaskFileName(string name) => $"task-{name}.jsonl";
@@ -118,7 +141,22 @@ internal static class Log
                 window = ms.ToArray();
             }
 
-            File.WriteAllBytes(path, RotateTail(window, hasSentinel));
+            byte[] keep = RotateTail(window, hasSentinel);
+
+            // 先写临时文件再替换：截断与写回之间被强制结束时，原日志仍然完整
+            string temp = path + ".rotating";
+            File.WriteAllBytes(temp, keep);
+
+            try
+            {
+                File.Move(temp, path, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                // 替换失败（例如日志被其他进程占用）：保留原文件，丢弃临时文件
+                try { File.Delete(temp); } catch { }
+                DebugWrite(ex);
+            }
         }
         catch (Exception ex)
         {
