@@ -2,34 +2,32 @@
 
 - 对应审查：`CODE_REVIEW_2026-11-09-04-20-13_a4ea15.md`（提交 `a4ea15b`，`try/dottray`）
 - 回复时间 2026-11-09 04:40 +08:00（香港时间）
-- 处理结果：五项全部处理，其中 P1 采用"明确子集 + 严格拒绝"而非恢复 Tomlyn
+- 处理结果：五项全部修复；P1 最终回到 Tomlyn 源生成（初稿的"该版本无生成器"结论有误）
 - 回归验证：Release 构建 0 错误 0 警告；`dotnet test` 79 项全部通过；CI 的 AOT 构建与 release 已重跑
 
-## [P1] 主分支的合法配置会被拒绝或被改写 —— 已处理（明确子集 + 补兼容项）
+## [P1] 主分支的合法配置会被拒绝或被改写 —— 已修复（回到 Tomlyn 源生成）
 
-先说为什么没有按建议恢复 Tomlyn 的源生成：**Tomlyn 2.11.0 包里没有源生成器**。`lib/` 下只有三个 TFM 的 `Tomlyn.dll`，没有 `analyzers/` 目录；2.x 也移除了 1.x 的 `Toml.ToModel` DOM 入口。审查链接的源生成文档对应的是更新的版本线，本地这个版本拿不到。
+**更正**：这份回复初稿断言"Tomlyn 2.11.0 没有源生成器"是错的。包内确实有
 
-于是把子集当成明确的产品决定，做两件事：
+```
+analyzers\dotnet\cs\Tomlyn.SourceGeneration.dll
+buildTransitive\Tomlyn.targets
+```
 
-**补上原本合法、被误拒的写法**
+我当时的匹配模式写的是 `SourceGenerator|Generator`，而文件名是 `SourceGeneration`——少一个字母，漏了。
 
-| 写法 | 现在 |
-|---|---|
-| `jitter = 1_000` | 接受（去掉下划线后按整数解析） |
-| `command = "\u4f5c"` | 接受（`\uXXXX` 转义已实现） |
-| `tasks = []` | 接受（等价于没有任务） |
+手写子集已整体删除，配置解析回到 Tomlyn 源生成：
 
-**把"会误解"的语法改成明确报错**
+```csharp
+[TomlSerializable(typeof(RunnerConfig))]
+internal partial class TomlContext : TomlSerializerContext;
 
-| 写法 | 之前 | 现在 |
-|---|---|---|
-| `"""多行"""` / `'''多行'''` | 被当成普通字符串，引号残留 | `不支持多行字符串（三引号），请写成单行` |
-| `command = "Write-Output "ok""` | 接受并执行 | `字符串后面有多余内容` |
-| 同一键写两次 | 后者静默生效 | `键重复` |
-| 字符串未闭引号 | 可能被当作命令 | `引号没有闭合` |
+var config = TomlSerializer.Deserialize<RunnerConfig>(text, TomlContext.Default);
+```
 
-兼容范围写在 [TomlConfig.cs](../src/Cronlet/TomlConfig.cs) 的类注释里，也就是唯一的行为契约。三引号多行命令确实不支持——如果需要，应该换一条更正式的解析路线，而不是继续往手写子集里加状态。
+完整语法随之恢复：三引号多行命令、下划线数字、`\uXXXX` 转义、`tasks = []` 都能用；`1__000`、`_5`、`007`、重复键、代理项转义、字符串后多余内容都由 TOML 解析器拒绝。`buildTransitive` 的 target 在 AOT 下关闭反射序列化，`IsAotCompatible` 编译 0 警告。
 
+细节见 `CODE_REVIEW_2026-11-09-04-43-51_352104_RESPONSE.md`。
 ## [P2] 托盘取消与显式释放竞争，正常退出可变成启动失败 —— 已修复
 
 复述：点退出 → 应用令牌取消 → DotTray 的令牌回调投递 `WM_CLOSE` 销毁窗口 → 主线程醒来再 `Dispose()` → 又一次 `WM_CLOSE` → `Win32Exception(1400)` → 被顶层 catch 记成 `fatal`、按启动失败返回。
@@ -81,7 +79,7 @@ gh release create "aot-${{ github.run_number }}"
 |---|---|
 | 保留 DotTray 作为独立托盘替换 | 已保留 |
 | 补齐退出所有权 | 已修 |
-| 配置解析保留 Tomlyn 源生成 | 无法采纳：该版本没有生成器；改为明确子集 + 严格拒绝 |
+| 配置解析保留 Tomlyn 源生成 | 已采纳（初稿误判该版本无生成器，现已纠正） |
 | JSONL 改用 `Utf8JsonWriter` | 暂不采纳。手写写入只覆盖字符串/布尔/整数/null 四种值，没有反射也没有分配问题；`Utf8JsonWriter` 会多一层 API 而收益不明。如果以后字段类型变复杂再换 |
 
 ## 回归结果

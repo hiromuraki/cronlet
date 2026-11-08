@@ -113,14 +113,15 @@ internal static class Program
     {
         try
         {
-            using var cts = new CancellationTokenSource();
+            using var done = new ManualResetEventSlim();
             using var menu = new DefaultPopupMenuHandler();
-            menu.Items.Add(new MenuItem { Text = "关闭", Clicked = _ => cts.Cancel() });
+            menu.Items.Add(new MenuItem { Text = "关闭", Clicked = _ => done.Set() });
 
             IntPtr handle = AppIcon.Extract();
             try
             {
-                using var icon = NotifyIcon.Run(handle, menu, cts.Token);
+                // 与正式托盘一致：DotTray 不拿令牌，关闭只走 Dispose
+                using var icon = NotifyIcon.Run(handle, menu, CancellationToken.None);
                 icon.SetToolTip("Cronlet 启动失败");
                 icon.ShowBalloon(new BalloonNotification
                 {
@@ -129,7 +130,7 @@ internal static class Program
                     Icon = BalloonNotificationIcon.Error,
                 });
 
-                cts.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(6));
+                done.Wait(TimeSpan.FromSeconds(6));
             }
             finally
             {
