@@ -9,7 +9,7 @@ namespace HiroMuraki.Cronlet;
 /// 循环睡到最近到期时间，执行到期任务，再排下一次。
 /// 支持运行期重载：读到临时配置 → 暂停派发 → 等空闲 → 原子替换并重排。
 /// </summary>
-public sealed class Scheduler
+internal sealed class Scheduler
 {
     private readonly CancellationToken _ct;
     private readonly PriorityQueue<TaskConfig, DateTime> _queue = new();

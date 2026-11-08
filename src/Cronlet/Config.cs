@@ -6,12 +6,12 @@ namespace HiroMuraki.Cronlet;
 /// <summary>
 /// config.toml 模型。属性名刻意用小写，与 TOML key 一一对应。
 /// </summary>
-public sealed class RunnerConfig
+internal sealed class RunnerConfig
 {
     public List<TaskConfig> tasks { get; set; } = new();
 }
 
-public sealed class TaskConfig
+internal sealed class TaskConfig
 {
     public string name { get; set; } = "";
     public bool enabled { get; set; } = true;
@@ -23,7 +23,7 @@ public sealed class TaskConfig
     public string? cwd { get; set; }
 }
 
-public static class ConfigLoader
+internal static class ConfigLoader
 {
     public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "config.toml");
 

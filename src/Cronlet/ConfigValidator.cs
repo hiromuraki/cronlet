@@ -2,7 +2,7 @@ using Cronos;
 
 namespace HiroMuraki.Cronlet;
 
-public static class ConfigValidator
+internal static class ConfigValidator
 {
     /// <summary>timeout 上限。计时器能表达的最大延迟约 49.7 天，这里留足余量取 30 天。</summary>
     public const int MaxTimeoutSeconds = 30 * 24 * 60 * 60;
