@@ -59,8 +59,16 @@ JSONL，每行一个 JSON，首字段固定为 `ts`（RFC3339 带时区）：
 ## 构建 / 发布
 
 ```powershell
-dotnet build -c Release
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
+.\publish.ps1
+```
+
+默认发布到 `S:\local\app\cronlet\content`（可用 `-Out` 覆盖）。目录布局沿用 app-runner 约定：
+
+```
+S:\local\app\cronlet\
+├─ content\          程序本体（Cronlet.exe、config.toml、scripts/、logs/）
+├─ app.ico
+└─ app.toml          启动器元数据（entry = Cronlet.exe）
 ```
 
 > 从带 Low 完整性标签的目录（例如某些 sandbox 工作区）直接运行 exe 会导致托盘图标注册失败（Win32 错误 5），请从普通目录运行。
