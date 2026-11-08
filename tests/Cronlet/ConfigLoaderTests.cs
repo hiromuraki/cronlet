@@ -13,7 +13,7 @@ public class ConfigLoaderTests
         var task = Assert.Single(config!.tasks);
         Assert.Equal("example", task.name);
         Assert.False(task.enabled);
-        Assert.Equal("echo hello", task.script);
+        Assert.Equal("echo hello", task.command);
         Assert.Equal("*/5 * * * *", task.cron);
         Assert.Equal(10, task.jitter);
         Assert.Equal(60, task.timeout);
@@ -49,7 +49,7 @@ public class ConfigLoaderTests
             File.WriteAllText(path, """
                 [[tasks]]
                 name = "campus"
-                script = "echo hi"
+                command = "echo hi"
                 cron = "*/2 * * * *"
                 jitter = 10
                 timeout = 120

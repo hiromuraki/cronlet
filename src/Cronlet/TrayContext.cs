@@ -20,6 +20,8 @@ internal sealed class TrayContext : ApplicationContext
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add("打开配置 TOML", null, (_, _) => OpenConfig());
+        _menu.Items.Add("打开脚本目录", null, (_, _) => OpenFolder(ScriptResolver.ScriptsDirectory));
+        _menu.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Log.LogDirectory));
 
         var reloadItem = new ToolStripMenuItem("重载配置");
         reloadItem.Click += async (_, _) =>
@@ -80,6 +82,20 @@ internal sealed class TrayContext : ApplicationContext
         catch (Exception ex)
         {
             MessageBox.Show($"打开配置失败：{ex.Message}", "Cronlet",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static void OpenFolder(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"打开目录失败：{ex.Message}", "Cronlet",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }

@@ -10,7 +10,7 @@
 [[tasks]]
 name = "campus-login"
 enabled = true
-script = "eportal-login.ps1"
+script_file = "eportal-login.ps1"   # 或者 command = "echo hi"，二选一
 cron = "*/2 * * * *"
 jitter = 10
 timeout = 120
@@ -22,16 +22,19 @@ cwd = ""
 |---|---|
 | `name` | 任务名，唯一（大小写不敏感） |
 | `enabled` | 是否启用 |
-| `script` | 绝对路径直接使用；相对路径**先按 exe 目录解析，找不到再到 `scripts/` 下找一次**；都不存在则当作 pwsh 命令执行 |
+| `script_file` | 脚本文件：绝对路径直接使用；相对路径**先按 exe 目录解析，找不到再到 `scripts/` 下找一次** |
+| `command` | pwsh 命令，直接交给 `pwsh -Command` 执行 |
 | `cron` | 5 段 unix cron（分 时 日 月 周），本地时区 |
 | `jitter` | 秒，触发时间 = cron 时间 + `random(0..jitter)`；必须小于 cron 的最小间隔，否则启动报错 |
 | `timeout` | 秒，0 表示不限制；超时杀整个进程树 |
 | `overlap` | 上次未结束时的策略：`skip`（默认）/ `kill` / `queue` |
 | `cwd` | 工作目录，空则用脚本所在目录 |
 
+`script_file` 与 `command` **必须且只能填一个**，同时填或都不填都会在启动/重载时报错。
+
 ## 运行模式
 
-- **用户态（默认）**：托盘图标 + 调度。菜单：打开配置 TOML / 重载配置 / 退出
+- **用户态（默认）**：托盘图标 + 调度。菜单：打开配置 TOML / 打开脚本目录 / 打开日志目录 / 重载配置 / 退出
 - **headless**：`Cronlet.exe --headless`（非交互会话也自动启用）——无托盘，只跑调度
 
 重载流程：重新读取 `config.toml` → 校验 → 暂停派发 → 等运行中的任务结束（最多 30s）→ 原子替换并重排。

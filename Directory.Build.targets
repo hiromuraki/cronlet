@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- 文档文件只为让 IDE0005 参与 build；产物留在 obj，既不进输出目录也不进 publish -->
+    <DocumentationFile>$(IntermediateOutputPath)$(AssemblyName).xml</DocumentationFile>
+    <CopyDocumentationFileToOutputDirectory>false</CopyDocumentationFileToOutputDirectory>
+  </PropertyGroup>
+</Project>

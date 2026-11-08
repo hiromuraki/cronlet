@@ -428,12 +428,18 @@ internal sealed class Scheduler
         psi.ArgumentList.Add("-ExecutionPolicy");
         psi.ArgumentList.Add("Bypass");
 
-        // 先按文件解析：含空格的路径、带引号的路径都走这条路；解析不到才当命令。
-        string? file = ScriptResolver.Resolve(task.script);
+        // script_file 与 command 互斥且必选其一，由配置校验保证；运行期文件被删则报错退出。
+        string? file = null;
+        if (!string.IsNullOrWhiteSpace(task.script_file))
+        {
+            file = ScriptResolver.Resolve(task.script_file!)
+                   ?? throw new FileNotFoundException($"找不到脚本: {task.script_file}");
+        }
+
         psi.ArgumentList.Add("-Command");
         psi.ArgumentList.Add(file is not null
             ? CommandWrapper.ForScript(file)
-            : CommandWrapper.ForCommand(task.script));
+            : CommandWrapper.ForCommand(task.command ?? ""));
 
         cwd = !string.IsNullOrWhiteSpace(task.cwd)
             ? task.cwd!

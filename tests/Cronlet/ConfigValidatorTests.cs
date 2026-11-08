@@ -9,7 +9,7 @@ public class ConfigValidatorTests
     private static TaskConfig Valid(string name = "job") => new()
     {
         name = name,
-        script = "echo hello",
+        command = "echo hello",
         cron = "*/5 * * * *",
         jitter = 1,
         timeout = 0,
@@ -35,11 +35,48 @@ public class ConfigValidatorTests
     }
 
     [Fact]
-    public void Empty_script_is_rejected()
+    public void Both_script_file_and_command_are_rejected()
     {
         var task = Valid();
-        task.script = "";
-        Assert.Contains("script", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        task.script_file = "whatever.ps1";
+        Assert.Contains("不能同时", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Neither_script_file_nor_command_is_rejected()
+    {
+        var task = Valid();
+        task.command = null;
+        Assert.Contains("二选一", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Missing_script_file_is_rejected()
+    {
+        var task = Valid();
+        task.command = null;
+        task.script_file = "no-such-script.ps1";
+        Assert.Contains("找不到脚本", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Existing_script_file_passes()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "real.ps1");
+        File.WriteAllText(file, "");
+        try
+        {
+            var task = Valid();
+            task.command = null;
+            task.script_file = file;
+            ConfigValidator.Validate(Wrap(task));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
@@ -123,13 +160,5 @@ public class ConfigValidatorTests
         var task = Valid();
         task.cwd = Path.Combine(Path.GetTempPath(), "cronlet-no-such-dir-" + Guid.NewGuid().ToString("N"));
         Assert.Contains("工作目录", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
-    }
-
-    [Fact]
-    public void Path_like_script_must_exist()
-    {
-        var task = Valid();
-        task.script = "no-such-script.ps1";
-        Assert.Contains("找不到脚本", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
     }
 }

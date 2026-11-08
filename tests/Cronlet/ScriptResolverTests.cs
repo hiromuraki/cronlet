@@ -4,36 +4,16 @@ namespace HiroMuraki.Cronlet.Tests;
 
 public class ScriptResolverTests
 {
-    [Theory]
-    [InlineData("eportal-login.ps1", true)]
-    [InlineData("JOBS/run.cmd", true)]
-    [InlineData(@"C:\tools\task.exe", true)]
-    [InlineData("scripts\\a.ps1", true)]
-    [InlineData("module.psm1", true)]
-    [InlineData("Daily Jobs\\report.ps1", true)]
-    [InlineData("\"C:\\Program Files\\a.ps1\"", true)]
-    [InlineData("scripts/a", true)]
-    [InlineData("echo hello", false)]
-    [InlineData("pwsh -NoProfile -File x", false)]
-    [InlineData("Invoke-WebRequest https://example.com", false)]
-    [InlineData("https://example.com", false)]
-    [InlineData("Get-ChildItem C:\\", false)]
-    [InlineData("'hello'", false)]
-    [InlineData("\"hello world\"", false)]
-    public void LooksLikePath_detects_file_references(string script, bool expected)
-        => Assert.Equal(expected, ScriptResolver.LooksLikePath(script));
-
     [Fact]
-    public void Resolve_strips_surrounding_quotes()
+    public void Resolve_returns_absolute_path_for_existing_file()
     {
         string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        string file = Path.Combine(dir, "quoted.ps1");
+        string file = Path.Combine(dir, "report.ps1");
         File.WriteAllText(file, "");
         try
         {
-            Assert.Equal(file, ScriptResolver.Resolve("\"" + file + "\""));
-            Assert.Equal(file, ScriptResolver.Resolve("'" + file + "'"));
+            Assert.Equal(file, ScriptResolver.Resolve(file));
         }
         finally
         {
@@ -42,7 +22,7 @@ public class ScriptResolverTests
     }
 
     [Fact]
-    public void Resolve_accepts_path_with_spaces_without_quotes()
+    public void Resolve_accepts_path_with_spaces()
     {
         string dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -51,7 +31,6 @@ public class ScriptResolverTests
         try
         {
             Assert.Equal(file, ScriptResolver.Resolve(file));
-            Assert.Equal(file, ScriptResolver.Resolve("\"" + file + "\""));
         }
         finally
         {
@@ -60,6 +39,10 @@ public class ScriptResolverTests
     }
 
     [Fact]
-    public void Resolve_returns_null_for_command_with_url()
-        => Assert.Null(ScriptResolver.Resolve("Invoke-WebRequest https://example.com"));
+    public void Resolve_returns_null_for_missing_file() =>
+        Assert.Null(ScriptResolver.Resolve(Path.Combine(Path.GetTempPath(), "cronlet-no-such-file.ps1")));
+
+    [Fact]
+    public void Resolve_returns_null_for_blank() =>
+        Assert.Null(ScriptResolver.Resolve("  "));
 }
