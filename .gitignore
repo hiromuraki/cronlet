@@ -6,3 +6,6 @@ obj/
 logs/
 publish/
 publish.ps1
+build-icon.ps1
+runner-preview.png
+app.toml

@@ -75,5 +75,6 @@ S:\local\app\cronlet\
 
 ## 图标
 
-`runner.svg` → `build-icon.ps1`（resvg 渲染多尺寸 PNG 并打包）→ `runner.ico`。
+- `runner.svg`：图标源文件
+- `runner.ico`：多尺寸图标（已提交，构建时嵌入 exe 与托盘）
 
