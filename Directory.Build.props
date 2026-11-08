@@ -1,5 +1,12 @@
 <Project>
   <PropertyGroup>
     <UseArtifactsOutput>true</UseArtifactsOutput>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- IDE0005 需要一个文档文件目标才会在 build 中参与分析 -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- 本仓库不是发布类库，不要求 public 成员写 XML 注释 -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 </Project>
