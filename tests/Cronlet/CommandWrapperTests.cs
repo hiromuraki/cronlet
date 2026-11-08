@@ -13,12 +13,17 @@ public class CommandWrapperTests
         => Assert.Equal(0, Run(CommandWrapper.ForCommand("'hi'")));
 
     [Fact]
-    public void PowerShell_failure_exits_nonzero()
-        => Assert.NotEqual(0, Run(CommandWrapper.ForCommand("Get-Item 'C:\\cronlet-no-such-file'")));
+    public void PowerShell_failure_exits_one()
+        => Assert.Equal(1, Run(CommandWrapper.ForCommand("Get-Item 'C:\\cronlet-no-such-file'")));
 
     [Fact]
     public void Native_exit_code_is_preserved()
         => Assert.Equal(7, Run(CommandWrapper.ForCommand("cmd /c exit 7")));
+
+    [Fact]
+    public void Native_exit_code_survives_native_error_preference()
+        => Assert.Equal(7, Run(CommandWrapper.ForCommand(
+            "$PSNativeCommandUseErrorActionPreference = $true; cmd /c exit 7")));
 
     [Fact]
     public void Command_ending_with_line_comment_still_runs()

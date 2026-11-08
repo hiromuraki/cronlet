@@ -23,7 +23,7 @@ internal sealed class Scheduler
     private int _running;
     private int _runSeq;
     private TaskCompletionSource? _idleTcs;
-    private readonly HashSet<string> _deferredReruns = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<TaskConfig> _deferredReruns = new();
     private volatile bool _reloading;
     private volatile bool _stopRequested;
 
@@ -78,9 +78,12 @@ internal sealed class Scheduler
                 Log.Event("config-reload-timeout", ("waitSeconds", 30));
                 lock (_queueGate)
                 {
-                    // 重载放弃，旧配置继续生效：把等待期间被延后的补跑恢复回来
+                    // 放弃重载：恢复延后的补跑与关闭重载窗口必须同处一个临界区，
+                    // 否则这个缝隙里新登记的补跑会滞留在集合中无人处理。
                     RestoreDeferredRerunsLocked();
+                    _reloading = false;
                 }
+                SignalWake();
                 return "等待当前任务结束超时（30s），已放弃重载";
             }
 
@@ -380,7 +383,7 @@ internal sealed class Scheduler
 
             if (_reloading)
             {
-                _deferredReruns.Add(finished.name);
+                _deferredReruns.Add(finished);
                 return;
             }
 
@@ -388,21 +391,23 @@ internal sealed class Scheduler
                 t.enabled && string.Equals(t.name, finished.name, StringComparison.OrdinalIgnoreCase));
             if (current is null) return;
 
+            // 重载会造出同名的新实例：旧任务的补跑请求不能落到新任务上，
+            // 否则新任务会在 cron 到期前被提前触发。
+            if (!ReferenceEquals(current, finished)) return;
+
             Log.Event("rerun", ("task", current.name));
             Fire(current);
         }
     }
 
-    /// <summary>重载失败后，按仍生效的旧配置恢复等待期间被延后的补跑。</summary>
+    /// <summary>重载失败后，按仍生效的旧配置恢复等待期间被延后的补跑（只认原来的任务实例）。</summary>
     private void RestoreDeferredRerunsLocked()
     {
         if (_deferredReruns.Count == 0) return;
 
-        foreach (string name in _deferredReruns)
+        foreach (var task in _deferredReruns)
         {
-            var task = _config.tasks.FirstOrDefault(t =>
-                t.enabled && string.Equals(t.name, name, StringComparison.OrdinalIgnoreCase));
-            if (task is null) continue;
+            if (!_config.tasks.Contains(task)) continue;
 
             Log.Event("rerun", ("task", task.name));
             Fire(task);
