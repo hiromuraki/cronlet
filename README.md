@@ -27,9 +27,11 @@ cwd = ""
 | `jitter` | 秒，触发时间 = cron 时间 + `random(0..jitter)`；必须小于 cron 的最小间隔，否则启动报错 |
 | `timeout` | 秒，0 表示不限制；超时杀整个进程树 |
 | `overlap` | 上次未结束时的策略：`skip`（默认）/ `kill` / `queue` |
-| `cwd` | 工作目录，空则用脚本所在目录 |
+| `cwd` | 工作目录，空则用 exe 目录 |
 
-`command` 是唯一入口：脚本就写 `./scripts/xxx.ps1`，临时命令就直接写命令本身。
+`command` 是唯一入口：脚本写 `./scripts/xxx.ps1`，临时命令直接写命令本身。
+
+**默认工作目录是 `Cronlet.exe` 所在目录**；`cwd` 非空时覆盖它。命令里的相对路径都相对这个目录解析，所以 `./scripts/login.ps1` 和你在 exe 目录下手敲的命令等价。
 
 ## 运行模式
 
