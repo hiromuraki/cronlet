@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -52,3 +52,14 @@ jobs:
         with:
           name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
+
+      # 实验分支上把 AOT 产物挂到 release，方便匿名下载
+      - name: Release (NativeAOT)
+        if: github.ref == 'refs/heads/try/dottray'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "aot-${{ github.run_number }}"
+          artifacts/publish/Cronlet/release_win-x64/Cronlet.exe
+          --title "AOT build ${{ github.run_number }}"
+          --notes "NativeAOT experiment build from ${{ github.sha }}"
