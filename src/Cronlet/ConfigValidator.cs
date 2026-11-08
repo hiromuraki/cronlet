@@ -16,7 +16,7 @@ internal static class ConfigValidator
     /// 校验配置并返回解析后的 PowerShell 路径。有启用任务时找不到 PowerShell
     /// 就算配置错误——否则启动会"成功"，但每个任务都跑不起来。
     /// </summary>
-    public static string Validate(RunnerConfig config)
+    public static string Validate(RunnerConfig config, CancellationToken ct = default)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -55,10 +55,10 @@ internal static class ConfigValidator
                 throw new Exception($"任务 {label}: cron 永远不会触发 ({t.cron})");
         }
 
-        return ResolveShell(config);
+        return ResolveShell(config, ct);
     }
 
-    private static string ResolveShell(RunnerConfig config)
+    private static string ResolveShell(RunnerConfig config, CancellationToken ct)
     {
         string shell = string.IsNullOrWhiteSpace(config.pwsh) ? ShellResolver.DefaultName : config.pwsh;
 
@@ -68,7 +68,7 @@ internal static class ConfigValidator
         if (resolved is null)
             throw new Exception($"找不到 PowerShell: {shell}（可用 pwsh 配置项指定完整路径）");
 
-        var probe = ShellResolver.Probe(resolved);
+        var probe = ShellResolver.Probe(resolved, ct);
         if (!probe.Ok)
             throw new Exception($"PowerShell 无法运行: {resolved}（{probe.Error}）");
 

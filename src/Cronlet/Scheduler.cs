@@ -313,7 +313,7 @@ internal sealed class Scheduler
                 await proc.WaitForExitAsync();
             }
 
-            proc.WaitForExit(2000);
+            // WaitForExitAsync 返回即已退出，无需再等；超时分支里的宽限已经给过
             if (proc.HasExited) exitCode = proc.ExitCode;
         }
         catch (Exception ex)
@@ -391,14 +391,6 @@ internal sealed class Scheduler
         _deferredReruns.Clear();
     }
 
-    /// <summary>当前队列里的计划条数（测试用于确认初始入队没有重复）。</summary>
-    internal int QueuedCount
-    {
-        get
-        {
-            lock (_gate) return _queue.Count;
-        }
-    }
 
     private TaskState GetStateLocked(TaskConfig task)
     {

@@ -65,12 +65,18 @@ overlap = "skip"                    # skip | kill | queue
 cwd = ""                            # 工作目录，空则用 exe 目录
 """;
 
-    public static RunnerConfig LoadOrCreate(string path)
+    /// <summary>配置文件不存在时写一份模板；托盘"打开配置文件"也复用它。</summary>
+    public static void EnsureExists(string path)
     {
         if (!File.Exists(path))
         {
             File.WriteAllText(path, DefaultTemplate, new UTF8Encoding(false));
         }
+    }
+
+    public static RunnerConfig LoadOrCreate(string path)
+    {
+        EnsureExists(path);
 
         string text = File.ReadAllText(path);
         var config = TomlSerializer.Deserialize<RunnerConfig>(text);

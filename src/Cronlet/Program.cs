@@ -89,7 +89,7 @@ internal static class Program
                 {
                     var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
                     // 校验可能包含一次 PowerShell 探测，放到后台线程，别卡住托盘
-                    string newPwsh = await Task.Run(() => ConfigValidator.Validate(newConfig));
+                    string newPwsh = await Task.Run(() => ConfigValidator.Validate(newConfig, cts.Token), cts.Token);
                     string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
                     if (error is not null) return error;
                     Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));

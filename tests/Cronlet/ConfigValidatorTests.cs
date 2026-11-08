@@ -6,6 +6,9 @@ public class ConfigValidatorTests
 {
     private static RunnerConfig Wrap(params TaskConfig[] tasks) => new() { tasks = [.. tasks] };
 
+    private static void Validate(RunnerConfig config) =>
+        ConfigValidator.Validate(config, TestContext.Current.CancellationToken);
+
     private static TaskConfig Valid(string name = "job") => new()
     {
         name = name,
@@ -17,20 +20,20 @@ public class ConfigValidatorTests
     };
 
     [Fact]
-    public void Valid_config_passes() => ConfigValidator.Validate(Wrap(Valid()));
+    public void Valid_config_passes() => Validate(Wrap(Valid()));
 
     [Fact]
     public void Missing_name_is_rejected()
     {
         var task = Valid();
         task.name = "  ";
-        Assert.Contains("name", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("name", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Fact]
     public void Duplicate_names_are_rejected()
     {
-        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid("campus"), Valid("CAMPUS"))));
+        var ex = Assert.Throws<Exception>(() => Validate(Wrap(Valid("campus"), Valid("CAMPUS"))));
         Assert.Contains("重复", ex.Message);
     }
 
@@ -39,7 +42,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.command = "  ";
-        Assert.Contains("command", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("command", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Fact]
@@ -47,7 +50,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.jitter = -1;
-        Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task)));
+        Assert.Throws<Exception>(() => Validate(Wrap(task)));
     }
 
     [Fact]
@@ -55,7 +58,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.timeout = -1;
-        Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task)));
+        Assert.Throws<Exception>(() => Validate(Wrap(task)));
     }
 
     [Fact]
@@ -63,7 +66,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.timeout = ConfigValidator.MaxTimeoutSeconds;
-        ConfigValidator.Validate(Wrap(task));
+        Validate(Wrap(task));
     }
 
     [Fact]
@@ -71,7 +74,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.timeout = ConfigValidator.MaxTimeoutSeconds + 1;
-        Assert.Contains("timeout", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("timeout", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Theory]
@@ -82,7 +85,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.overlap = overlap;
-        ConfigValidator.Validate(Wrap(task));
+        Validate(Wrap(task));
     }
 
     [Fact]
@@ -90,7 +93,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.overlap = "replace";
-        Assert.Contains("overlap", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("overlap", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Fact]
@@ -98,7 +101,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.cron = "every five minutes";
-        Assert.Contains("cron", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("cron", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Fact]
@@ -106,7 +109,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.cron = "0 0 31 2 *";
-        Assert.Contains("永远不会触发", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("永远不会触发", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 
     [Fact]
@@ -115,14 +118,14 @@ public class ConfigValidatorTests
         var task = Valid();
         task.enabled = false;
         task.cron = "0 0 31 2 *";
-        ConfigValidator.Validate(Wrap(task));
+        Validate(Wrap(task));
     }
 
     [Theory]
     [InlineData("job")]
     [InlineData("Job-1_2")]
     [InlineData("A")]
-    public void Valid_name_characters_pass(string name) => ConfigValidator.Validate(Wrap(Valid(name)));
+    public void Valid_name_characters_pass(string name) => Validate(Wrap(Valid(name)));
 
     [Theory]
     [InlineData("a/b")]
@@ -131,19 +134,19 @@ public class ConfigValidatorTests
     [InlineData("a.b")]
     public void Invalid_name_characters_are_rejected(string name)
     {
-        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid(name))));
+        var ex = Assert.Throws<Exception>(() => Validate(Wrap(Valid(name))));
         Assert.Contains("name", ex.Message);
     }
 
     [Fact]
     public void Name_of_max_length_passes() =>
-        ConfigValidator.Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength))));
+        Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength))));
 
     [Fact]
     public void Name_above_max_length_is_rejected()
     {
         var ex = Assert.Throws<Exception>(() =>
-            ConfigValidator.Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength + 1)))));
+            Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength + 1)))));
         Assert.Contains("128", ex.Message);
     }
 
@@ -152,7 +155,7 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.jitter = 7200; // 超过间隔时由排程按实际余量截断
-        ConfigValidator.Validate(Wrap(task));
+        Validate(Wrap(task));
     }
 
     [Fact]
@@ -160,6 +163,6 @@ public class ConfigValidatorTests
     {
         var task = Valid();
         task.cwd = Path.Combine(Path.GetTempPath(), "cronlet-no-such-dir-" + Guid.NewGuid().ToString("N"));
-        Assert.Contains("工作目录", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+        Assert.Contains("工作目录", Assert.Throws<Exception>(() => Validate(Wrap(task))).Message);
     }
 }

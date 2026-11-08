@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 
 namespace HiroMuraki.Cronlet;
 
@@ -73,10 +72,7 @@ internal sealed class TrayContext : ApplicationContext
     {
         try
         {
-            if (!File.Exists(_configPath))
-            {
-                File.WriteAllText(_configPath, ConfigLoader.DefaultTemplate, new UTF8Encoding(false));
-            }
+            ConfigLoader.EnsureExists(_configPath);
             using var proc = Process.Start(new ProcessStartInfo(_configPath) { UseShellExecute = true });
         }
         catch (Exception ex)

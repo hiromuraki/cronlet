@@ -1,3 +1,4 @@
+using System.Reflection;
 using Xunit;
 
 namespace HiroMuraki.Cronlet.Tests;
@@ -18,7 +19,7 @@ public class SchedulerTests
     };
 
     private static void Validate(TaskConfig task) =>
-        ConfigValidator.Validate(new RunnerConfig { tasks = [task] });
+        ConfigValidator.Validate(new RunnerConfig { tasks = [task] }, TestContext.Current.CancellationToken);
 
     [Fact]
     public void Command_is_passed_to_pwsh_verbatim()
@@ -116,7 +117,12 @@ public class SchedulerTests
         try
         {
             scheduler.Start();
-            Assert.Equal(2, scheduler.QueuedCount);
+
+            // 直接看私有队列：这个断言只测试需要，不该给生产代码加观察接口
+            object queue = typeof(Scheduler).GetField("_queue", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(scheduler)!;
+            int count = (int)queue.GetType().GetProperty("Count")!.GetValue(queue)!;
+            Assert.Equal(2, count);
         }
         finally
         {

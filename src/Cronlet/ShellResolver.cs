@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace HiroMuraki.Cronlet;
 
@@ -13,6 +14,8 @@ internal static class ShellResolver
     public const string DefaultName = "pwsh";
 
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
+    private const int MaxVersionChars = 256;
+    private const int MaxErrorChars = 2048;
 
     /// <summary>解析成功返回完整路径，失败返回 null。</summary>
     public static string? Resolve(string configured)
@@ -56,10 +59,10 @@ internal static class ShellResolver
 
     /// <summary>
     /// 用一次带超时的真实执行确认这个可执行文件可用。
-    /// 进程退出与两路管道读取共用同一个截止时间——否则继承了输出管道的后代
-    /// 会让读取一直等下去。超时后结束整棵进程树，让管道关闭。
+    /// 进程退出与两路管道排空共用同一个截止时间；读取会一直读到流结束，
+    /// 这样写满管道的子进程不会把自己堵死。
     /// </summary>
-    public static (bool Ok, string? Error) Probe(string path)
+    public static (bool Ok, string? Error) Probe(string path, CancellationToken ct = default)
     {
         try
         {
@@ -79,26 +82,36 @@ internal static class ShellResolver
             using var proc = Process.Start(psi);
             if (proc is null) return (false, "process did not start");
 
-            // 只读第一行做版本判断，不把探测输出整体收进内存
-            var version = proc.StandardOutput.ReadLineAsync();
-            var error = proc.StandardError.ReadToEndAsync();
+            // 探测进程也挂进 Job：宿主被强杀时不会留下一个还在跑的 pwsh
+            ChildJob.TryAssign(proc, out _);
 
-            var all = Task.WhenAll(proc.WaitForExitAsync(), version, error);
-            if (!all.Wait(ProbeTimeout))
+            var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars);
+            var stderr = DrainAsync(proc.StandardError, MaxErrorChars);
+            var all = Task.WhenAll(proc.WaitForExitAsync(ct), stdout, stderr);
+
+            try
+            {
+                if (!all.Wait(ProbeTimeout, ct))
+                {
+                    try { proc.Kill(true); } catch { }
+                    return (false, $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
+                }
+            }
+            catch (OperationCanceledException)
             {
                 try { proc.Kill(true); } catch { }
-                return (false, $"未在 {ProbeTimeout.TotalSeconds:0}s 内完成");
+                return (false, "已取消");
             }
 
             if (proc.ExitCode != 0)
             {
-                string message = error.GetAwaiter().GetResult().Trim();
+                string message = stderr.GetAwaiter().GetResult().Trim();
                 return (false, $"exit={proc.ExitCode}{(message.Length > 0 ? ": " + message : "")}");
             }
 
-            string? text = version.GetAwaiter().GetResult()?.Trim();
-            if (string.IsNullOrEmpty(text)) return (false, "没有输出版本号");
-            if (!int.TryParse(text, out _)) return (false, $"输出不是版本号: {text}");
+            string? version = FirstLine(stdout.GetAwaiter().GetResult());
+            if (version is null) return (false, "没有输出版本号");
+            if (!int.TryParse(version, out _)) return (false, $"输出不是版本号: {version}");
 
             return (true, null);
         }
@@ -106,5 +119,31 @@ internal static class ShellResolver
         {
             return (false, ex.Message);
         }
+    }
+
+    private static string? FirstLine(string text)
+    {
+        int newline = text.IndexOf('\n');
+        string line = (newline >= 0 ? text[..newline] : text).Trim();
+        return line.Length == 0 ? null : line;
+    }
+
+    /// <summary>
+    /// 持续排空一路管道，只保留前 <paramref name="keep"/> 个字符。
+    /// 读到底而不是"读完首行就撒手"，否则剩余输出会填满管道把子进程卡住。
+    /// </summary>
+    private static async Task<string> DrainAsync(StreamReader reader, int keep)
+    {
+        char[] buffer = new char[4096];
+        var kept = new StringBuilder(keep);
+
+        int read;
+        while ((read = await reader.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+        {
+            int room = keep - kept.Length;
+            if (room > 0) kept.Append(buffer, 0, Math.Min(room, read));
+        }
+
+        return kept.ToString();
     }
 }
