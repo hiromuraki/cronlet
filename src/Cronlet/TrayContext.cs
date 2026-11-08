@@ -19,7 +19,7 @@ internal sealed class TrayContext : ApplicationContext
         _onExit = onExit;
 
         _menu = new ContextMenuStrip();
-        _menu.Items.Add("打开配置 TOML", null, (_, _) => OpenConfig());
+        _menu.Items.Add("打开配置文件", null, (_, _) => OpenConfig());
         _menu.Items.Add("打开脚本目录", null, (_, _) => OpenFolder(ScriptResolver.ScriptsDirectory));
         _menu.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Log.LogDirectory));
 
