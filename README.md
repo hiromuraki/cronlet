@@ -1,6 +1,6 @@
 # Cronlet
 
-按 cron 调度执行 PowerShell 脚本/命令的托盘小工具（.NET 10 / WinForms）。
+按 cron 调度执行 PowerShell 脚本/命令的托盘小工具（.NET 11 / WinForms）。
 
 ## 配置
 
@@ -68,3 +68,4 @@ dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile
 ## 图标
 
 `runner.svg` → `build-icon.ps1`（resvg 渲染多尺寸 PNG 并打包）→ `runner.ico`。
+
