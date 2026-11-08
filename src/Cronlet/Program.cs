@@ -13,7 +13,7 @@ internal static class Program
 
         try
         {
-            return Run(args, headless);
+            return Run(headless);
         }
         catch (Exception ex)
         {
@@ -27,7 +27,7 @@ internal static class Program
         }
     }
 
-    private static int Run(string[] args, bool headless)
+    private static int Run(bool headless)
     {
         ApplicationConfiguration.Initialize();
 
@@ -88,7 +88,8 @@ internal static class Program
                 try
                 {
                     var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-                    string newPwsh = ConfigValidator.Validate(newConfig);
+                    // 校验可能包含一次 PowerShell 探测，放到后台线程，别卡住托盘
+                    string newPwsh = await Task.Run(() => ConfigValidator.Validate(newConfig));
                     string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
                     if (error is not null) return error;
                     Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));

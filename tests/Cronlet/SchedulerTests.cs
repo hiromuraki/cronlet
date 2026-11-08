@@ -26,9 +26,9 @@ public class SchedulerTests
         var task = Task();
         Validate(task);
 
-        var psi = Scheduler.BuildStartInfo(task, "pwsh", out string? cwd);
+        var psi = Scheduler.BuildStartInfo(task, "pwsh");
         Assert.Equal(CommandWrapper.ForCommand("'hello'"), psi.ArgumentList[^1]);
-        Assert.Equal(Paths.Base, cwd);
+        Assert.Equal(Paths.Base, psi.WorkingDirectory);
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class SchedulerTests
         task.command = "Write-Output 'a b'";
         Validate(task);
 
-        var psi = Scheduler.BuildStartInfo(task, "pwsh", out _);
+        var psi = Scheduler.BuildStartInfo(task, "pwsh");
         Assert.Equal(CommandWrapper.ForCommand("Write-Output 'a b'"), psi.ArgumentList[^1]);
     }
 
@@ -53,8 +53,7 @@ public class SchedulerTests
             task.cwd = dir;
             Validate(task);
 
-            var psi = Scheduler.BuildStartInfo(task, "pwsh", out string? cwd);
-            Assert.Equal(dir, cwd);
+            var psi = Scheduler.BuildStartInfo(task, "pwsh");
             Assert.Equal(dir, psi.WorkingDirectory);
         }
         finally

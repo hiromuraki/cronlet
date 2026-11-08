@@ -77,7 +77,7 @@ internal sealed class TrayContext : ApplicationContext
             {
                 File.WriteAllText(_configPath, ConfigLoader.DefaultTemplate, new UTF8Encoding(false));
             }
-            Process.Start(new ProcessStartInfo(_configPath) { UseShellExecute = true });
+            using var proc = Process.Start(new ProcessStartInfo(_configPath) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -91,7 +91,7 @@ internal sealed class TrayContext : ApplicationContext
         try
         {
             Directory.CreateDirectory(path);
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            using var proc = Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -103,8 +103,7 @@ internal sealed class TrayContext : ApplicationContext
     private void ExitApp()
     {
         _onExit();
-        _tray.Visible = false;
-        _tray.Dispose();
+        _tray.Visible = false;   // 立即隐藏图标，释放交给 Dispose
         ExitThread();
     }
 

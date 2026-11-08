@@ -129,7 +129,6 @@ internal sealed class Scheduler
                 }
                 _reloading = false;
             }
-            SignalWake();
             return null;
         }
         finally
@@ -263,7 +262,7 @@ internal sealed class Scheduler
 
         try
         {
-            var psi = BuildStartInfo(task, _pwsh, out string? cwd);
+            var psi = BuildStartInfo(task, _pwsh);
 
             using var proc = new Process { StartInfo = psi };
             proc.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stdout", e.Data); };
@@ -478,7 +477,7 @@ internal sealed class Scheduler
         tcs.TrySetResult();
     }
 
-    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, string pwsh, out string cwd)
+    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, string pwsh)
     {
         var psi = new ProcessStartInfo
         {
@@ -497,8 +496,7 @@ internal sealed class Scheduler
         psi.ArgumentList.Add("-Command");
         psi.ArgumentList.Add(CommandWrapper.ForCommand(task.command));
 
-        cwd = !string.IsNullOrWhiteSpace(task.cwd) ? task.cwd! : Paths.Base;
-        psi.WorkingDirectory = cwd;
+        psi.WorkingDirectory = !string.IsNullOrWhiteSpace(task.cwd) ? task.cwd! : Paths.Base;
         return psi;
     }
 

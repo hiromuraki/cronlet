@@ -70,20 +70,20 @@ internal static class Log
     {
         if (Encoding.UTF8.GetByteCount(line) <= MaxLineBytes) return line;
 
-        int[] boundaries = StringInfo.ParseCombiningCharacters(line);
+        // 逐簇扫描到上限即停：不为整行分配字形边界数组，巨行也不会额外吃掉几十 MiB
         int cut = 0;
         int used = 0;
+        var walker = StringInfo.GetTextElementEnumerator(line);
 
-        for (int i = 0; i < boundaries.Length; i++)
+        while (walker.MoveNext())
         {
-            int start = boundaries[i];
-            int end = i + 1 < boundaries.Length ? boundaries[i + 1] : line.Length;
-            int size = Encoding.UTF8.GetByteCount(line.AsSpan(start, end - start));
+            string element = walker.GetTextElement();
+            int size = Encoding.UTF8.GetByteCount(element);
 
             if (used + size > MaxLineBytes) break;
 
             used += size;
-            cut = end;
+            cut += element.Length;
         }
 
         return string.Concat(line.AsSpan(0, cut), TruncatedSuffix);
@@ -145,15 +145,15 @@ internal static class Log
 
             // 先写临时文件再替换：截断与写回之间被强制结束时，原日志仍然完整
             string temp = path + ".rotating";
-            File.WriteAllBytes(temp, keep);
 
             try
             {
+                File.WriteAllBytes(temp, keep);
                 File.Move(temp, path, overwrite: true);
             }
             catch (Exception ex)
             {
-                // 替换失败（例如日志被其他进程占用）：保留原文件，丢弃临时文件
+                // 写入或替换失败：保留原文件，清理可能残留的临时文件
                 try { File.Delete(temp); } catch { }
                 DebugWrite(ex);
             }
