@@ -25,7 +25,8 @@ public static class ConfigValidator
             if (t.overlap is not ("skip" or "kill" or "queue"))
                 throw new Exception($"任务 {label}: overlap 只能是 skip / kill / queue");
 
-            if (ScriptResolver.LooksLikePath(t.script) && ScriptResolver.Resolve(t.script) is null)
+            // 解析成功就是脚本；解析失败且看着像文件引用才报错，否则留给内联命令执行
+            if (ScriptResolver.Resolve(t.script) is null && ScriptResolver.LooksLikePath(t.script))
                 throw new Exception($"任务 {label}: 找不到脚本 {t.script}（已查 exe 目录与 scripts/）");
 
             if (!string.IsNullOrWhiteSpace(t.cwd) && !Directory.Exists(t.cwd))

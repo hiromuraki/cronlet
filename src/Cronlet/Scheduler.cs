@@ -23,6 +23,7 @@ public sealed class Scheduler
     private int _running;
     private int _runSeq;
     private TaskCompletionSource? _idleTcs;
+    private readonly HashSet<string> _deferredReruns = new(StringComparer.OrdinalIgnoreCase);
     private volatile bool _reloading;
     private volatile bool _stopRequested;
 
@@ -58,7 +59,12 @@ public sealed class Scheduler
     /// </summary>
     public async Task<string?> ReloadAsync(RunnerConfig newConfig)
     {
-        _reloading = true;
+        // 置位必须在 _queueGate 内：派发也在同一把锁里进行，这样能保证
+        // 已经进入派发路径的任务完成运行登记（_running++）之后才去判断空闲。
+        lock (_queueGate)
+        {
+            _reloading = true;
+        }
         SignalWake();
 
         try
@@ -70,6 +76,11 @@ public sealed class Scheduler
             catch (TimeoutException)
             {
                 Log.Event("config-reload-timeout", ("waitSeconds", 30));
+                lock (_queueGate)
+                {
+                    // 重载放弃，旧配置继续生效：把等待期间被延后的补跑恢复回来
+                    RestoreDeferredRerunsLocked();
+                }
                 return "等待当前任务结束超时（30s），已放弃重载";
             }
 
@@ -78,6 +89,7 @@ public sealed class Scheduler
                 lock (_states) { _states.Clear(); }
                 _config = newConfig;
                 _queue.Clear();
+                _deferredReruns.Clear(); // 新配置会重新排队，旧的补跑作废
                 foreach (var t in _config.tasks.Where(x => x.enabled))
                 {
                     TryEnqueueLocked(t);
@@ -86,7 +98,7 @@ public sealed class Scheduler
         }
         finally
         {
-            _reloading = false;
+            lock (_queueGate) { _reloading = false; }
             SignalWake();
         }
 
@@ -356,14 +368,21 @@ public sealed class Scheduler
     }
 
     /// <summary>
-    /// 补跑排队的任务。与重载互斥：重载窗口内的补跑直接丢弃（重载会按新配置重排），
-    /// 且只按名字从**当前**配置里取任务，避免重载后用旧命令再跑一次。
+    /// 补跑排队的任务。与重载互斥：重载窗口内只登记、不派发，等重载结果决定是丢弃
+    /// （新配置已重排）还是恢复（重载超时，旧配置继续生效）。
+    /// 派发时只按名字从**当前**配置里取任务，避免重载后拿旧对象跑旧命令。
     /// </summary>
     private void TryRerun(TaskConfig finished)
     {
         lock (_queueGate)
         {
-            if (_stopRequested || _reloading) return;
+            if (_stopRequested) return;
+
+            if (_reloading)
+            {
+                _deferredReruns.Add(finished.name);
+                return;
+            }
 
             var current = _config.tasks.FirstOrDefault(t =>
                 t.enabled && string.Equals(t.name, finished.name, StringComparison.OrdinalIgnoreCase));
@@ -374,7 +393,25 @@ public sealed class Scheduler
         }
     }
 
-    private static ProcessStartInfo BuildStartInfo(TaskConfig task, out string cwd)
+    /// <summary>重载失败后，按仍生效的旧配置恢复等待期间被延后的补跑。</summary>
+    private void RestoreDeferredRerunsLocked()
+    {
+        if (_deferredReruns.Count == 0) return;
+
+        foreach (var name in _deferredReruns)
+        {
+            var task = _config.tasks.FirstOrDefault(t =>
+                t.enabled && string.Equals(t.name, name, StringComparison.OrdinalIgnoreCase));
+            if (task is null) continue;
+
+            Log.Event("rerun", ("task", task.name));
+            Fire(task);
+        }
+
+        _deferredReruns.Clear();
+    }
+
+    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, out string cwd)
     {
         var psi = new ProcessStartInfo
         {
@@ -391,7 +428,8 @@ public sealed class Scheduler
         psi.ArgumentList.Add("-ExecutionPolicy");
         psi.ArgumentList.Add("Bypass");
 
-        var file = ScriptResolver.LooksLikePath(task.script) ? ScriptResolver.Resolve(task.script) : null;
+        // 先按文件解析：含空格的路径、带引号的路径都走这条路；解析不到才当命令。
+        var file = ScriptResolver.Resolve(task.script);
         psi.ArgumentList.Add("-Command");
         psi.ArgumentList.Add(file is not null
             ? CommandWrapper.ForScript(file)

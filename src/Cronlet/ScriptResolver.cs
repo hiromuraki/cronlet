@@ -1,8 +1,8 @@
 namespace HiroMuraki.Cronlet;
 
 /// <summary>
-/// script 解析：绝对路径直接用；相对路径先按 exe 目录解析，找不到再去 scripts/ 下找一次。
-/// 整体被引号包住的字符串先去掉引号；带空白或 URL 的字符串按命令处理，不当路径。
+/// script 解析：先当文件找（绝对路径、exe 目录、scripts/ 目录），找不到再当命令执行。
+/// 外层成对引号会先去掉，所以含空格的路径不加引号也能解析。
 /// </summary>
 internal static class ScriptResolver
 {
@@ -26,18 +26,18 @@ internal static class ScriptResolver
     }
 
     /// <summary>
-    /// 看起来像独立的文件路径（而不是一段带参数的命令）时返回 true。
-    /// 规则：显式加引号 → 路径；含空白 → 命令；含 "://" → URL；含分隔符或脚本扩展名 → 路径。
+    /// 文件解析失败后，判断这段文本是否"本该是一个文件引用"，用于给出明确的报错。
+    /// 含 "://" 视为 URL；有脚本扩展名视为路径；含空白视为带参数的命令；其余看有没有路径分隔符。
+    /// 注意：本方法不参与"是否当文件执行"的判断，是否文件由 <see cref="Resolve"/> 的结果决定。
     /// </summary>
     public static bool LooksLikePath(string script)
     {
-        var s = script.Trim();
+        var s = Unquote(script);
         if (s.Length == 0) return false;
-        if (IsQuoted(s)) return true;
-        if (ContainsWhitespace(s)) return false;
         if (s.Contains("://", StringComparison.Ordinal)) return false;
-        if (s.Contains('\\') || s.Contains('/')) return true;
-        return HasScriptExtension(s);
+        if (HasScriptExtension(s)) return true;
+        if (ContainsWhitespace(s)) return false;
+        return s.Contains('\\') || s.Contains('/');
     }
 
     private static string Unquote(string script)

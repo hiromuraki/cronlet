@@ -10,12 +10,16 @@ public class ScriptResolverTests
     [InlineData(@"C:\tools\task.exe", true)]
     [InlineData("scripts\\a.ps1", true)]
     [InlineData("module.psm1", true)]
+    [InlineData("Daily Jobs\\report.ps1", true)]
     [InlineData("\"C:\\Program Files\\a.ps1\"", true)]
+    [InlineData("scripts/a", true)]
     [InlineData("echo hello", false)]
     [InlineData("pwsh -NoProfile -File x", false)]
     [InlineData("Invoke-WebRequest https://example.com", false)]
     [InlineData("https://example.com", false)]
     [InlineData("Get-ChildItem C:\\", false)]
+    [InlineData("'hello'", false)]
+    [InlineData("\"hello world\"", false)]
     public void LooksLikePath_detects_file_references(string script, bool expected)
         => Assert.Equal(expected, ScriptResolver.LooksLikePath(script));
 
@@ -30,6 +34,24 @@ public class ScriptResolverTests
         {
             Assert.Equal(file, ScriptResolver.Resolve("\"" + file + "\""));
             Assert.Equal(file, ScriptResolver.Resolve("'" + file + "'"));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Resolve_accepts_path_with_spaces_without_quotes()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "report.ps1");
+        File.WriteAllText(file, "");
+        try
+        {
+            Assert.Equal(file, ScriptResolver.Resolve(file));
+            Assert.Equal(file, ScriptResolver.Resolve("\"" + file + "\""));
         }
         finally
         {

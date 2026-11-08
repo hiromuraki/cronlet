@@ -21,6 +21,10 @@ public class CommandWrapperTests
         => Assert.Equal(7, Run(CommandWrapper.ForCommand("cmd /c exit 7")));
 
     [Fact]
+    public void Command_ending_with_line_comment_still_runs()
+        => Assert.Equal(0, Run(CommandWrapper.ForCommand("Write-Output ready # note")));
+
+    [Fact]
     public void Failing_script_file_exits_nonzero()
     {
         var dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));

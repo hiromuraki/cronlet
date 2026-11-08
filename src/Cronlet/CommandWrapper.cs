@@ -4,6 +4,7 @@ namespace HiroMuraki.Cronlet;
 /// 构造 pwsh -Command 的包装命令：统一控制台编码，并把两种失败都映射成非零退出码
 /// —— PowerShell 自身的失败（把非终止错误提升为终止错误后由 catch 捕获）
 /// 与原生程序的非零退出码。原生程序的退出码优先保留，便于调用方区分。
+/// 命令体两侧用换行与包装语句隔开，避免行尾注释把闭合花括号一起注释掉。
 /// </summary>
 internal static class CommandWrapper
 {
@@ -19,8 +20,8 @@ internal static class CommandWrapper
     public static string ForCommand(string command) => Wrap(command);
 
     private static string Wrap(string body) =>
-        Prelude +
-        " try { " + body + " } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }" +
-        " if ($null -ne $LASTEXITCODE -and 0 -ne $LASTEXITCODE) { exit $LASTEXITCODE }" +
-        " exit 0";
+        Prelude + "\n" +
+        "try {\n" + body + "\n} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\n" +
+        "if ($null -ne $LASTEXITCODE -and 0 -ne $LASTEXITCODE) { exit $LASTEXITCODE }\n" +
+        "exit 0";
 }
