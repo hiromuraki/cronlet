@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Cronlet/Cronlet.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Cronlet/Cronlet.Tests.csproj" />
+  </Folder>
+</Solution>

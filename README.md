@@ -56,11 +56,26 @@ JSONL，每行一个 JSON，首字段固定为 `ts`（RFC3339 带时区）：
 
 高低水位：文件超过 **16MB** 时裁剪到最近 **8MB**（从行首开始，不切坏 JSON）。
 
-## 构建 / 发布
+## 目录结构
+
+```
+Cronlet.slnx
+Directory.Build.props   UseArtifactsOutput：所有产物落在 artifacts/
+global.json             dotnet test 走 Microsoft.Testing.Platform
+src/Cronlet/            主程序（WinForms）
+tests/Cronlet/          单元测试（xunit v3）
+artifacts/              bin/ obj/ publish/ test/，不入库
+```
+
+## 构建 / 测试 / 发布
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
+dotnet build   Cronlet.slnx -c Release
+dotnet test    Cronlet.slnx -c Release
+dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
+
+发布产物在 `artifacts/publish/Cronlet/release_win-x64/Cronlet.exe`。
 
 本机部署目录为 `S:\local\app\cronlet`，布局沿用 app-runner 约定：
 
@@ -75,6 +90,6 @@ S:\local\app\cronlet\
 
 ## 图标
 
-- `runner.svg`：图标源文件
-- `runner.ico`：多尺寸图标（已提交，构建时嵌入 exe 与托盘）
+- `src/Cronlet/runner.svg`：图标源文件
+- `src/Cronlet/runner.ico`：多尺寸图标（已提交，构建时嵌入 exe 与托盘）
 

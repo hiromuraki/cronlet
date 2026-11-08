@@ -1,0 +1,119 @@
+using Xunit;
+
+namespace HiroMuraki.Cronlet.Tests;
+
+public class ConfigValidatorTests
+{
+    private static RunnerConfig Wrap(params TaskConfig[] tasks) => new() { tasks = [.. tasks] };
+
+    private static TaskConfig Valid(string name = "job") => new()
+    {
+        name = name,
+        script = "echo hello",
+        cron = "*/5 * * * *",
+        jitter = 1,
+        timeout = 0,
+        overlap = "skip",
+    };
+
+    [Fact]
+    public void Valid_config_passes() => ConfigValidator.Validate(Wrap(Valid()));
+
+    [Fact]
+    public void Missing_name_is_rejected()
+    {
+        var task = Valid();
+        task.name = "  ";
+        Assert.Contains("name", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Duplicate_names_are_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid("campus"), Valid("CAMPUS"))));
+        Assert.Contains("重复", ex.Message);
+    }
+
+    [Fact]
+    public void Empty_script_is_rejected()
+    {
+        var task = Valid();
+        task.script = "";
+        Assert.Contains("script", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Negative_jitter_is_rejected()
+    {
+        var task = Valid();
+        task.jitter = -1;
+        Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task)));
+    }
+
+    [Fact]
+    public void Negative_timeout_is_rejected()
+    {
+        var task = Valid();
+        task.timeout = -1;
+        Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task)));
+    }
+
+    [Theory]
+    [InlineData("skip")]
+    [InlineData("kill")]
+    [InlineData("queue")]
+    public void Known_overlap_values_pass(string overlap)
+    {
+        var task = Valid();
+        task.overlap = overlap;
+        ConfigValidator.Validate(Wrap(task));
+    }
+
+    [Fact]
+    public void Unknown_overlap_is_rejected()
+    {
+        var task = Valid();
+        task.overlap = "replace";
+        Assert.Contains("overlap", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Invalid_cron_is_rejected()
+    {
+        var task = Valid();
+        task.cron = "every five minutes";
+        Assert.Contains("cron", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Jitter_at_min_interval_is_rejected()
+    {
+        var task = Valid();
+        task.jitter = 300; // */5 * * * * 的间隔正好 300s
+        Assert.Contains("jitter", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Jitter_below_min_interval_passes()
+    {
+        var task = Valid();
+        task.jitter = 299;
+        ConfigValidator.Validate(Wrap(task));
+    }
+
+    [Fact]
+    public void Missing_cwd_is_rejected()
+    {
+        var task = Valid();
+        task.cwd = Path.Combine(Path.GetTempPath(), "cronlet-no-such-dir-" + Guid.NewGuid().ToString("N"));
+        Assert.Contains("工作目录", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+
+    [Fact]
+    public void Path_like_script_must_exist()
+    {
+        var task = Valid();
+        task.script = "no-such-script.ps1";
+        Assert.Contains("找不到脚本", Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(task))).Message);
+    }
+}

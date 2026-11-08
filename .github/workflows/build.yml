@@ -25,15 +25,20 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 11.0.x
+          # .NET 11 仍是 RC；GA 之后删掉这一行
+          dotnet-quality: preview
 
       - name: Build
-        run: dotnet build -c Release --nologo
+        run: dotnet build Cronlet.slnx -c Release --nologo
+
+      - name: Test
+        run: dotnet test Cronlet.slnx -c Release --nologo
 
       - name: Publish
-        run: dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
+        run: dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: cronlet-win-x64
-          path: publish/
+          path: artifacts/publish/Cronlet/release_win-x64/
