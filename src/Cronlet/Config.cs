@@ -17,6 +17,10 @@ internal sealed class RunnerConfig
     public string pwsh { get; set; } = ShellResolver.DefaultName;
 
     public List<TaskConfig> tasks { get; set; } = new();
+
+    /// <summary>收集未识别的顶层键，用来把拼写错误暴露成配置错误。</summary>
+    [TomlExtensionData]
+    public Dictionary<string, object>? extra { get; set; }
 }
 
 internal sealed class TaskConfig
@@ -32,6 +36,10 @@ internal sealed class TaskConfig
     public int timeout { get; set; }
     public string overlap { get; set; } = "skip";
     public string? cwd { get; set; }
+
+    /// <summary>收集未识别的任务键，例如把 enabled 写成 enabeld。</summary>
+    [TomlExtensionData]
+    public Dictionary<string, object>? extra { get; set; }
 }
 
 internal static class ConfigLoader
@@ -87,7 +95,31 @@ cwd = ""                            # 工作目录，空则用 exe 目录
 
     internal static RunnerConfig Parse(string text)
     {
-        var config = TomlSerializer.Deserialize<RunnerConfig>(text, TomlContext.Default);
-        return config ?? throw new Exception("配置为空");
+        var config = TomlSerializer.Deserialize<RunnerConfig>(text, TomlContext.Default)
+                     ?? throw new Exception("配置为空");
+
+        RejectUnknownKeys(config.extra, null);
+
+        foreach (var task in config.tasks)
+        {
+            string label = string.IsNullOrWhiteSpace(task.name) ? "(未命名)" : task.name;
+            RejectUnknownKeys(task.extra, label);
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Tomlyn 默认忽略未知键，拼错的表名或字段会静默生效（例如 tasks 写成 task 就变成零任务）。
+    /// 这里把它们当成配置错误。
+    /// </summary>
+    private static void RejectUnknownKeys(Dictionary<string, object>? extra, string? taskName)
+    {
+        if (extra is null || extra.Count == 0) return;
+
+        string keys = string.Join(", ", extra.Keys);
+        throw new Exception(taskName is null
+            ? $"顶层有未知的键: {keys}（检查拼写，例如表名应为 [[tasks]]）"
+            : $"任务 {taskName}: 有未知字段: {keys}");
     }
 }

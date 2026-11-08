@@ -1,6 +1,6 @@
 # Cronlet
 
-按 cron 调度执行 PowerShell 脚本/命令的托盘小工具（.NET 11 / WinForms）。
+按 cron 调度执行 PowerShell 脚本/命令的托盘小工具（.NET 11 / 纯 Win32 托盘 / NativeAOT）。
 
 ## 配置
 
@@ -25,7 +25,7 @@ cwd = ""
 | `command` | 要执行的 pwsh 命令，原样交给 `pwsh -Command`；相对路径以 exe 目录为当前目录 |
 | `cron` | 5 段 unix cron（分 时 日 月 周），本地时区 |
 | `jitter` | 秒，触发时间 = cron 时间 + `random(0..jitter)`；上限被限制在下一次触发之前，间隔不足时实际抖动会变小 |
-| `timeout` | 秒，0 表示不限制；超时杀整个进程树 |
+| `timeout` | 秒，0 表示不限制；超时终止整个进程组（含已脱离父进程的后代）。命令启动瞬间派生的后代可能不在其中 |
 | `overlap` | 上次未结束时的策略：`skip`（默认）/ `kill` / `queue` |
 | `cwd` | 工作目录，空则用 exe 目录 |
 
@@ -76,7 +76,7 @@ JSONL，每行一个 JSON，首字段固定为 `ts`（RFC3339 带时区）：
 Cronlet.slnx
 Directory.Build.props   UseArtifactsOutput：所有产物落在 artifacts/
 global.json             dotnet test 走 Microsoft.Testing.Platform
-src/Cronlet/            主程序（WinForms）
+src/Cronlet/            主程序（DotTray + Tomlyn 源生成，AOT 兼容）
 tests/Cronlet/          单元测试（xunit v3）
 artifacts/              bin/ obj/ publish/ test/，不入库
 ```
@@ -89,7 +89,15 @@ dotnet test    Cronlet.slnx -c Release
 dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-发布产物在 `artifacts/publish/Cronlet/release_win-x64/Cronlet.exe`。
+框架依赖的单文件产物在 `artifacts/publish/Cronlet/release_win-x64/Cronlet.exe`，目标机需要装 .NET 11 运行时。
+
+自包含的 NativeAOT 版本（目标机不需要任何运行时）：
+
+```powershell
+dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 -p:PublishAot=true -p:StripSymbols=true
+```
+
+产物约 3 MB，体积与内存都比框架依赖版更小。本机编译需要 MSVC（VS Build Tools 的 C++ 工作负载）；CI 的 `windows-latest` 自带，所以 `build.yml` 会同时产出两种包。
 
 本机部署目录为 `S:\local\app\cronlet`，布局沿用 app-runner 约定：
 

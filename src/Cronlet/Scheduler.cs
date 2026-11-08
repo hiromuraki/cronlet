@@ -55,20 +55,29 @@ internal sealed class Scheduler
         _ = Task.Run(LoopAsync);
     }
 
-    /// <summary>停止调度：先置停止标志，再结束所有正在运行的子进程。</summary>
+    /// <summary>停止调度：先置停止标志，再结束所有正在运行的进程组。</summary>
     public void Stop()
     {
+        List<ChildJob> jobs = [];
         List<Process> running = [];
+
         lock (_gate)
         {
             _stopRequested = true;
             foreach (var st in _states.Values)
             {
+                if (st.Job is not null) jobs.Add(st.Job);
                 if (st.Process is not null) running.Add(st.Process);
             }
         }
 
         SignalWake();
+
+        // Job 先终止：它覆盖已经脱离父进程的后代
+        foreach (var job in jobs)
+        {
+            job.Terminate();
+        }
 
         foreach (var proc in running)
         {
@@ -234,6 +243,7 @@ internal sealed class Scheduler
             switch (task.overlap)
             {
                 case "kill":
+                    try { st.Job?.Terminate(); } catch { }
                     try { st.Process?.Kill(true); } catch { }
                     policy = "kill";
                     break;
@@ -260,13 +270,19 @@ internal sealed class Scheduler
         bool timedOut = false;
         var sw = Stopwatch.StartNew();
 
+        ChildJob? job = null;
+
         try
         {
+            job = ChildJob.Create(out string? jobError);
+            if (job is null && Interlocked.Exchange(ref _jobWarning, 1) == 0)
+            {
+                Log.Event("job-create-failed", ("task", task.name), ("error", jobError));
+            }
+
             var psi = BuildStartInfo(task, _pwsh);
 
             using var proc = new Process { StartInfo = psi };
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stdout", e.Data); };
-            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stderr", e.Data); };
 
             // 最终校验、启动与句柄登记放在同一临界区：否则 Stop 或 kill 可能卡在
             // 三者之间，看到一个还没启动的 Process，或让已被替换的请求照样启动。
@@ -277,21 +293,24 @@ internal sealed class Scheduler
                 if (started)
                 {
                     st.Process = proc;
+                    st.Job = job;
                     proc.Start();
                 }
             }
             if (!started) return;
 
-            // Job 只覆盖加入之后的进程；失败只记一次，避免每个任务都刷一行
-            if (!ChildJob.TryAssign(proc, out string? jobError) && Interlocked.Exchange(ref _jobWarning, 1) == 0)
+            // 进程加入本次运行的 Job；失败只记一次，避免每个任务都刷一行
+            if (job is not null && !job.TryAssign(proc, out string? assignError) &&
+                Interlocked.Exchange(ref _jobWarning, 1) == 0)
             {
-                Log.Event("job-assign-failed", ("task", task.name), ("error", jobError));
+                Log.Event("job-assign-failed", ("task", task.name), ("error", assignError));
             }
 
             Log.Event("task-start", ("task", task.name), ("pid", proc.Id));
 
-            proc.BeginOutputReadLine();
-            proc.BeginErrorReadLine();
+            using var readCts = new CancellationTokenSource();
+            var stdout = PumpAsync(proc.StandardOutput, task.name, "stdout", readCts.Token);
+            var stderr = PumpAsync(proc.StandardError, task.name, "stderr", readCts.Token);
 
             if (task.timeout > 0)
             {
@@ -303,7 +322,12 @@ internal sealed class Scheduler
                 catch (OperationCanceledException)
                 {
                     timedOut = true;
+
+                    // 先终止 Job：中间进程退出后，末级后代已经不在进程树里，
+                    // 只有 Job 能把它一起收掉
+                    job?.Terminate();
                     try { proc.Kill(true); } catch { }
+
                     using var killCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     try { await proc.WaitForExitAsync(killCts.Token); } catch { }
                 }
@@ -315,6 +339,16 @@ internal sealed class Scheduler
 
             // WaitForExitAsync 返回即已退出，无需再等；超时分支里的宽限已经给过
             if (proc.HasExited) exitCode = proc.ExitCode;
+
+            // 让两路读取把剩余输出排空，但不无限等
+            try
+            {
+                await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                readCts.Cancel();
+            }
         }
         catch (Exception ex)
         {
@@ -322,8 +356,39 @@ internal sealed class Scheduler
         }
         finally
         {
+            // 关闭句柄：仍留在 Job 里的后代（例如任务起的后台进程）会被一并结束
+            job?.Dispose();
             Complete(task, st, runId, exitCode, timedOut, sw.ElapsedMilliseconds);
         }
+    }
+
+    /// <summary>
+    /// 把一路输出按有界行读出来写日志。不再用 <c>BeginOutputReadLine</c>：
+    /// 那个入口会先缓存完整的一行，无换行的巨量输出会把宿主内存顶满。
+    /// </summary>
+    private static async Task PumpAsync(StreamReader reader, string task, string stream, CancellationToken ct)
+    {
+        char[] buffer = new char[4096];
+        var assembler = new LineAssembler(Log.MaxLineBytes);
+
+        try
+        {
+            int read;
+            while ((read = await reader.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false)) > 0)
+            {
+                foreach (string line in assembler.Feed(buffer.AsSpan(0, read)))
+                {
+                    Log.TaskOutput(task, stream, line);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            // 进程结束或取消：下面把残留的一行落盘
+        }
+
+        string? tail = assembler.Flush();
+        if (tail is not null) Log.TaskOutput(task, stream, tail);
     }
 
     /// <summary>
@@ -339,6 +404,7 @@ internal sealed class Scheduler
             if (st.RunId == runId)
             {
                 st.Process = null;
+                st.Job = null;
                 st.Running = false;
             }
 
@@ -498,5 +564,6 @@ internal sealed class Scheduler
         public bool Pending;
         public int RunId;
         public Process? Process;
+        public ChildJob? Job;
     }
 }

@@ -84,8 +84,9 @@ internal static class ShellResolver
             using var proc = Process.Start(psi);
             if (proc is null) return (false, "process did not start");
 
-            // 探测进程也挂进 Job：宿主被强杀时不会留下一个还在跑的 pwsh
-            ChildJob.TryAssign(proc, out _);
+            // 探测也用一个独立 Job：宿主异常退出或被取消时一并清理
+            using var job = ChildJob.Create(out _);
+            job?.TryAssign(proc, out _);
 
             // 一个截止时间同时约束进程退出与两路读取：取消或超时后读取任务自己结束，
             // 不会留下仍在等外部写端的读任务

@@ -71,4 +71,30 @@ public class ConfigParseTests
     [InlineData("[[tasks]]\ncommand = \"\\uD800\"")]
     public void Illegal_input_is_rejected_by_the_parser(string text)
         => Assert.ThrowsAny<Exception>(() => ConfigLoader.Parse(text));
+    [Fact]
+    public void Misspelled_table_name_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => ConfigLoader.Parse("[[task]]\ncommand = \"echo hi\""));
+        Assert.Contains("task", ex.Message);
+        Assert.Contains("未知", ex.Message);
+    }
+
+    [Fact]
+    public void Misspelled_task_key_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() =>
+            ConfigLoader.Parse("[[tasks]]\nname = \"a\"\nenabeld = false"));
+        Assert.Contains("enabeld", ex.Message);
+    }
+
+    [Fact]
+    public void Misspelled_top_level_key_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() => ConfigLoader.Parse("pws = \"pwsh\""));
+        Assert.Contains("pws", ex.Message);
+    }
+
+    [Fact]
+    public void Explicit_empty_tasks_array_is_still_accepted()
+        => Assert.Empty(ConfigLoader.Parse("tasks = []").tasks);
 }

@@ -4,68 +4,62 @@ using System.Runtime.InteropServices;
 namespace HiroMuraki.Cronlet;
 
 /// <summary>
-/// 子进程 Job 对象：KILL_ON_JOB_CLOSE。
-/// Runner 无论正常退出还是被强杀，OS 都会关闭 Job 句柄，
-/// 从而连带结束所有子进程，避免残留 pwsh。
-/// 注意：只覆盖加入 Job 之后的进程。命令在 <c>Start()</c> 之后、<c>TryAssign</c> 之前
-/// 就派生出的后代可能逃逸，所以这是尽力清理，不是硬保证。
+/// 一次任务运行对应的 Job 对象：KILL_ON_JOB_CLOSE + 可显式 Terminate。
+/// 每次运行新建一个，超时、<c>overlap = "kill"</c> 和停止路径都用它终止整组进程；
+/// 运行结束时 Dispose，句柄关闭会连带结束仍留在 Job 里的后代。
+/// 注意：只覆盖加入 Job 之后的进程，命令在 Start 之后、TryAssign 之前派生出的后代仍可能逃逸。
 /// </summary>
-internal static class ChildJob
+internal sealed class ChildJob : IDisposable
 {
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
 
-    private static readonly IntPtr Handle;
-    private static readonly string? InitError;
+    private IntPtr _handle;
 
-    static ChildJob()
+    private ChildJob(IntPtr handle) => _handle = handle;
+
+    /// <summary>创建 Job；失败返回 null 并给出原因（调用方负责记录）。</summary>
+    public static ChildJob? Create(out string? error)
     {
-        try
+        IntPtr handle = CreateJobObjectW(IntPtr.Zero, null);
+        if (handle == IntPtr.Zero)
         {
-            IntPtr handle = CreateJobObjectW(IntPtr.Zero, null);
-            if (handle == IntPtr.Zero)
-            {
-                InitError = $"CreateJobObject failed: {Marshal.GetLastWin32Error()}";
-                return;
-            }
-
-            var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-            {
-                BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
-                {
-                    LimitFlags = JobObjectLimitKillOnJobClose,
-                },
-            };
-
-            if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ref info,
-                    Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
-            {
-                // 清理标志没设上就等于没有保护，这个句柄不能当作可用的 Job 发布出去
-                InitError = $"SetInformationJobObject failed: {Marshal.GetLastWin32Error()}";
-                CloseHandle(handle);
-                return;
-            }
-
-            Handle = handle;
+            error = $"CreateJobObject failed: {Marshal.GetLastWin32Error()}";
+            return null;
         }
-        catch (Exception ex)
+
+        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
         {
-            InitError = ex.Message;
+            BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+            {
+                LimitFlags = JobObjectLimitKillOnJobClose,
+            },
+        };
+
+        if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ref info,
+                Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
+        {
+            error = $"SetInformationJobObject failed: {Marshal.GetLastWin32Error()}";
+            CloseHandle(handle);
+            return null;
         }
+
+        error = null;
+        return new ChildJob(handle);
     }
 
-    /// <summary>把子进程加入 Job；失败时返回 false 与原因，由调用方决定是否记录。</summary>
-    public static bool TryAssign(Process process, out string? error)
+    /// <summary>把进程加入 Job；失败返回 false 并给出原因。</summary>
+    public bool TryAssign(Process process, out string? error)
     {
-        if (Handle == IntPtr.Zero)
+        if (_handle == IntPtr.Zero)
         {
-            error = InitError ?? "job object unavailable";
+            error = "job object unavailable";
             return false;
         }
 
         try
         {
-            if (!AssignProcessToJobObject(Handle, process.Handle))
+            if (!AssignProcessToJobObject(_handle, process.Handle))
             {
                 error = $"AssignProcessToJobObject failed: {Marshal.GetLastWin32Error()}";
                 return false;
@@ -79,6 +73,22 @@ internal static class ChildJob
             error = ex.Message;
             return false;
         }
+    }
+
+    /// <summary>终止 Job 里的所有进程（包括已经脱离父进程的后代）。</summary>
+    public void Terminate()
+    {
+        if (_handle == IntPtr.Zero) return;
+
+        try { TerminateJobObject(_handle, 1); } catch { }
+    }
+
+    public void Dispose()
+    {
+        if (_handle == IntPtr.Zero) return;
+
+        CloseHandle(_handle);
+        _handle = IntPtr.Zero;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -125,6 +135,9 @@ internal static class ChildJob
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateJobObject(IntPtr hJob, uint uExitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -53,14 +55,28 @@ jobs:
           name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
 
-      # 实验分支上把 AOT 产物挂到 release，方便匿名下载
+  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/try/dottray'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download AOT artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: cronlet-win-x64-aot
+          path: aot
+
       - name: Release (NativeAOT)
-        if: github.ref == 'refs/heads/try/dottray'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: >
           gh release create "aot-${{ github.run_number }}"
-          artifacts/publish/Cronlet/release_win-x64/Cronlet.exe
+          aot/Cronlet.exe
           --target ${{ github.sha }}
           --prerelease
           --title "AOT build ${{ github.run_number }}"
