@@ -99,6 +99,42 @@ public class SchedulerTests
         Assert.True(distinct > 1, "抖动应当随机，而不是每次都取上限");
     }
 
+    [Fact]
+    public void Start_enqueues_each_enabled_task_once_before_returning()
+    {
+        var config = new RunnerConfig
+        {
+            tasks =
+            [
+                FarTask("a"),
+                FarTask("b"),
+                FarTask("c", enabled: false),
+            ],
+        };
+
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(config, cts.Token);
+        try
+        {
+            scheduler.Start();
+            Assert.Equal(2, scheduler.QueuedCount);
+        }
+        finally
+        {
+            cts.Cancel();
+            scheduler.Stop();
+        }
+    }
+
+    private static TaskConfig FarTask(string name, bool enabled = true) => new()
+    {
+        name = name,
+        enabled = enabled,
+        command = "echo " + name,
+        cron = "0 0 1 1 *",
+        overlap = "skip",
+    };
+
     private sealed class FixedRandom(int value) : Random
     {
         public override int Next(int minValue, int maxValue) => value;

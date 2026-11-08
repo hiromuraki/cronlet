@@ -36,7 +36,22 @@ internal sealed class Scheduler
         _ct = ct;
     }
 
-    public void Start() => _ = Task.Run(LoopAsync);
+    /// <summary>
+    /// 启动调度。初始入队在返回前完成，后台循环只消费队列——否则首轮重载可能
+    /// 先清空并装入新配置，后台循环随后又按同一份配置追加一遍。
+    /// </summary>
+    public void Start()
+    {
+        lock (_gate)
+        {
+            foreach (var t in _config.tasks.Where(x => x.enabled))
+            {
+                TryEnqueueLocked(t);
+            }
+        }
+
+        _ = Task.Run(LoopAsync);
+    }
 
     /// <summary>停止调度：先置停止标志，再结束所有正在运行的子进程。</summary>
     public void Stop()
@@ -124,14 +139,6 @@ internal sealed class Scheduler
 
     private async Task LoopAsync()
     {
-        lock (_gate)
-        {
-            foreach (var t in _config.tasks.Where(x => x.enabled))
-            {
-                TryEnqueueLocked(t);
-            }
-        }
-
         while (!_ct.IsCancellationRequested)
         {
             try
@@ -380,6 +387,15 @@ internal sealed class Scheduler
         }
 
         _deferredReruns.Clear();
+    }
+
+    /// <summary>当前队列里的计划条数（测试用于确认初始入队没有重复）。</summary>
+    internal int QueuedCount
+    {
+        get
+        {
+            lock (_gate) return _queue.Count;
+        }
     }
 
     private TaskState GetStateLocked(TaskConfig task)

@@ -22,7 +22,7 @@ internal static class ConfigValidator
             if (string.IsNullOrWhiteSpace(t.name)) throw new Exception("存在没有 name 的任务");
             if (!IsValidName(t.name))
                 throw new Exception(
-                    $"任务 {label}: name 只能包含字母、数字、下划线和短横线，且不超过 {MaxNameLength} 个字符");
+                    $"任务 {label}: name 只能包含 A-Z、a-z、0-9、下划线和短横线，长度 1-{MaxNameLength}");
             if (!names.Add(t.name)) throw new Exception($"任务名称重复: {t.name}");
 
             if (string.IsNullOrWhiteSpace(t.command)) throw new Exception($"任务 {label}: command 不能为空");

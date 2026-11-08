@@ -22,8 +22,8 @@ internal static class ChildJob
     {
         try
         {
-            Handle = CreateJobObjectW(IntPtr.Zero, null);
-            if (Handle == IntPtr.Zero)
+            IntPtr handle = CreateJobObjectW(IntPtr.Zero, null);
+            if (handle == IntPtr.Zero)
             {
                 InitError = $"CreateJobObject failed: {Marshal.GetLastWin32Error()}";
                 return;
@@ -37,11 +37,16 @@ internal static class ChildJob
                 },
             };
 
-            if (!SetInformationJobObject(Handle, JobObjectExtendedLimitInformation, ref info,
+            if (!SetInformationJobObject(handle, JobObjectExtendedLimitInformation, ref info,
                     Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
             {
+                // 清理标志没设上就等于没有保护，这个句柄不能当作可用的 Job 发布出去
                 InitError = $"SetInformationJobObject failed: {Marshal.GetLastWin32Error()}";
+                CloseHandle(handle);
+                return;
             }
+
+            Handle = handle;
         }
         catch (Exception ex)
         {
@@ -120,4 +125,7 @@ internal static class ChildJob
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }
