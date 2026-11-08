@@ -59,10 +59,10 @@ JSONL，每行一个 JSON，首字段固定为 `ts`（RFC3339 带时区）：
 ## 构建 / 发布
 
 ```powershell
-.\publish.ps1
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
-默认发布到 `S:\local\app\cronlet\content`（可用 `-Out` 覆盖）。目录布局沿用 app-runner 约定：
+本机部署目录为 `S:\local\app\cronlet`，布局沿用 app-runner 约定：
 
 ```
 S:\local\app\cronlet\
