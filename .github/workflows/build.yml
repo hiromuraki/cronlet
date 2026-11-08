@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'try/**']
   pull_request:
   workflow_dispatch:
 
@@ -34,11 +34,21 @@ jobs:
       - name: Test
         run: dotnet test Cronlet.slnx -c Release --nologo
 
-      - name: Publish
+      - name: Publish (framework dependent)
         run: dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 
-      - name: Upload artifact
+      - name: Upload (framework dependent)
         uses: actions/upload-artifact@v7
         with:
           name: cronlet-win-x64
+          path: artifacts/publish/Cronlet/release_win-x64/
+
+      # windows-latest 镜像自带 MSVC 与 Windows SDK，NativeAOT 可以直接编
+      - name: Publish (NativeAOT)
+        run: dotnet publish src/Cronlet/Cronlet.csproj -c Release -r win-x64 -p:PublishAot=true -p:StripSymbols=true
+
+      - name: Upload (NativeAOT)
+        uses: actions/upload-artifact@v7
+        with:
+          name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
