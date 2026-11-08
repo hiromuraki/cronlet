@@ -10,11 +10,18 @@ namespace HiroMuraki.Cronlet;
 ///   logs/runner.jsonl      —— Runner 自身事件
 ///   logs/task-&lt;name&gt;.jsonl —— 每个任务的 stdout/stderr
 /// 每次写入时打开、写完即关闭；按高低水位轮转：超过 16MB 时裁剪到最近 8MB。
+/// 单条输出行超过 <see cref="MaxLineLength"/> 会被截断，避免一条巨行把窗口挤满、
+/// 让轮转把整份历史清掉。
 /// </summary>
 internal static class Log
 {
     private const long HighWatermark = 16L * 1024 * 1024;
     private const long LowWatermark = HighWatermark / 2;
+
+    /// <summary>单条输出保留的最大字符数。</summary>
+    internal const int MaxLineLength = 8 * 1024;
+
+    private const string TruncatedSuffix = "…[truncated]";
 
     private static readonly object Gate = new();
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -39,12 +46,14 @@ internal static class Log
 
     public static void TaskOutput(string task, string stream, string line)
     {
+        string text = TruncateLine(line);
+
         lock (Gate)
         {
             try
             {
                 Append(TaskFileName(task), BuildLine("task-output",
-                    new (string, object?)[] { ("task", task), ("stream", stream), ("line", line) }));
+                    new (string, object?)[] { ("task", task), ("stream", stream), ("line", text) }));
             }
             catch (Exception ex)
             {
@@ -52,6 +61,10 @@ internal static class Log
             }
         }
     }
+
+    /// <summary>单条输出超过上限时截断，避免一条巨行挤满轮转窗口。</summary>
+    internal static string TruncateLine(string line) =>
+        line.Length <= MaxLineLength ? line : string.Concat(line.AsSpan(0, MaxLineLength), TruncatedSuffix);
 
     /// <summary>任务名已被校验限制为字母、数字、下划线和短横线，可以直接拼进文件名。</summary>
     internal static string TaskFileName(string name) => $"task-{name}.jsonl";
@@ -73,7 +86,6 @@ internal static class Log
     private static string Timestamp() =>
         DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz", CultureInfo.InvariantCulture);
 
-
     private static void Append(string file, string line)
     {
         string dir = Paths.Logs;
@@ -91,17 +103,22 @@ internal static class Log
             var info = new FileInfo(path);
             if (!info.Exists || info.Length <= HighWatermark) return;
 
-            byte[] tail;
+            byte[] window;
+            bool hasSentinel;
+
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                long start = Math.Max(0, fs.Length - LowWatermark);
-                fs.Position = start;
+                long windowStart = Math.Max(0, fs.Length - LowWatermark);
+                hasSentinel = windowStart > 0;
+
+                // 多读一个字节作为哨兵，用来判断窗口是否正好落在行首
+                fs.Position = hasSentinel ? windowStart - 1 : 0;
                 using var ms = new MemoryStream();
                 fs.CopyTo(ms);
-                tail = ms.ToArray();
+                window = ms.ToArray();
             }
 
-            File.WriteAllBytes(path, RotateTail(tail));
+            File.WriteAllBytes(path, RotateTail(window, hasSentinel));
         }
         catch (Exception ex)
         {
@@ -110,15 +127,31 @@ internal static class Log
     }
 
     /// <summary>
-    /// 从低水位窗口里裁出完整的记录：丢掉窗口开头的残行，再丢掉可能不完整的末行。
-    /// 窗口里没有任何完整记录时返回空数组，而不是把半行写回文件。
+    /// 从低水位窗口里裁出完整记录。<paramref name="hasSentinel"/> 为 true 时 window 的
+    /// 首字节是"窗口前一个字节"：它是换行说明窗口正好从行首开始，此时第一行本身是完整
+    /// 记录，不能丢弃；否则窗口从记录中间开始，要跳过那段残行。末尾同样只保留完整行。
     /// </summary>
-    internal static byte[] RotateTail(byte[] tail)
+    internal static byte[] RotateTail(byte[] window, bool hasSentinel)
     {
-        int first = Array.IndexOf(tail, (byte)'\n');
-        if (first < 0) return [];
+        int offset = 0;
 
-        byte[] keep = tail[(first + 1)..];
+        if (hasSentinel)
+        {
+            if (window.Length == 0) return [];
+
+            if (window[0] == (byte)'\n')
+            {
+                offset = 1; // 哨兵是换行：窗口首字节即新记录的开始
+            }
+            else
+            {
+                int first = Array.IndexOf(window, (byte)'\n', 1);
+                if (first < 0) return [];
+                offset = first + 1;
+            }
+        }
+
+        byte[] keep = window[offset..];
         int last = Array.LastIndexOf(keep, (byte)'\n');
         if (last < 0) return [];
 

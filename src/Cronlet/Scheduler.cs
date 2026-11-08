@@ -24,15 +24,17 @@ internal sealed class Scheduler
     private TaskCompletionSource _wake = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource? _idle;
     private RunnerConfig _config;
+    private string _pwsh;
     private int _running;
     private int _runSeq;
     private bool _reloading;
     private bool _stopRequested;
     private int _jobWarning;
 
-    public Scheduler(RunnerConfig config, CancellationToken ct)
+    public Scheduler(RunnerConfig config, string pwsh, CancellationToken ct)
     {
         _config = config;
+        _pwsh = pwsh;
         _ct = ct;
     }
 
@@ -78,7 +80,7 @@ internal sealed class Scheduler
     /// 运行期重载：暂停派发，等所有正在运行的任务结束（最多 30s），
     /// 再原子替换配置并重排。返回 null 表示成功，否则返回错误信息。
     /// </summary>
-    public async Task<string?> ReloadAsync(RunnerConfig newConfig)
+    public async Task<string?> ReloadAsync(RunnerConfig newConfig, string pwsh)
     {
         Task? idle = null;
         lock (_gate)
@@ -118,6 +120,7 @@ internal sealed class Scheduler
             {
                 _states.Clear();
                 _config = newConfig;
+                _pwsh = pwsh;
                 _queue.Clear();
                 _deferredReruns.Clear(); // 新配置会重新排队，旧的补跑作废
                 foreach (var t in _config.tasks.Where(x => x.enabled))
@@ -260,7 +263,7 @@ internal sealed class Scheduler
 
         try
         {
-            var psi = BuildStartInfo(task, out string? cwd);
+            var psi = BuildStartInfo(task, _pwsh, out string? cwd);
 
             using var proc = new Process { StartInfo = psi };
             proc.OutputDataReceived += (_, e) => { if (e.Data is not null) Log.TaskOutput(task.name, "stdout", e.Data); };
@@ -475,11 +478,11 @@ internal sealed class Scheduler
         tcs.TrySetResult();
     }
 
-    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, out string cwd)
+    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, string pwsh, out string cwd)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = "pwsh.exe",
+            FileName = pwsh,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

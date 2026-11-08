@@ -47,10 +47,11 @@ internal static class Program
         using var instanceHandle = instance;
 
         RunnerConfig config;
+        string pwsh;
         try
         {
             config = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-            ConfigValidator.Validate(config);
+            pwsh = ConfigValidator.Validate(config);
         }
         catch (Exception ex)
         {
@@ -64,7 +65,7 @@ internal static class Program
         }
 
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(config, cts.Token);
+        var scheduler = new Scheduler(config, pwsh, cts.Token);
         scheduler.Start();
         Log.Event("start", ("headless", headless), ("tasks", config.tasks.Count(x => x.enabled)));
 
@@ -87,8 +88,8 @@ internal static class Program
                 try
                 {
                     var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-                    ConfigValidator.Validate(newConfig);
-                    string? error = await scheduler.ReloadAsync(newConfig);
+                    string newPwsh = ConfigValidator.Validate(newConfig);
+                    string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
                     if (error is not null) return error;
                     Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));
                     return null;

@@ -8,6 +8,9 @@ namespace HiroMuraki.Cronlet;
 /// </summary>
 internal sealed class RunnerConfig
 {
+    /// <summary>PowerShell 可执行文件；裸名字在 PATH 里找，也可以写完整路径。</summary>
+    public string pwsh { get; set; } = ShellResolver.DefaultName;
+
     public List<TaskConfig> tasks { get; set; } = new();
 }
 
@@ -47,6 +50,9 @@ internal static class ConfigLoader
 #   overlap     上次未结束时的策略：skip | kill | queue
 #   cwd         工作目录；空则用 exe 目录
 # ==============================================================
+
+# 可选：指定 PowerShell 可执行文件（默认在 PATH 里找 pwsh）
+# pwsh = "S:/tools/pwsh/pwsh.exe"
 
 [[tasks]]
 name = "example"

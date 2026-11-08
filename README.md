@@ -31,6 +31,12 @@ cwd = ""
 
 `command` 是唯一入口：脚本写 `./scripts/xxx.ps1`，临时命令直接写命令本身。
 
+`pwsh` 是全局配置项（与 `[[tasks]]` 同级），指定 PowerShell 可执行文件；不写则按 `pwsh` 在 PATH 里找。有启用任务却找不到时，启动或重载会直接报错：
+
+```toml
+pwsh = "S:/tools/pwsh/pwsh.exe"
+```
+
 **默认工作目录是 `Cronlet.exe` 所在目录**；`cwd` 非空时覆盖它。命令里的相对路径都相对这个目录解析，所以 `./scripts/login.ps1` 和你在 exe 目录下手敲的命令等价。
 
 路径里含空格时按 PowerShell 规则加引号：`command = "& './scripts/Daily Jobs/report.ps1'"`。
@@ -61,7 +67,8 @@ JSONL，每行一个 JSON，首字段固定为 `ts`（RFC3339 带时区）：
 | `logs/runner.jsonl` | Runner 事件（start / task-start / task-end / 错误等） |
 | `logs/task-<name>.jsonl` | 对应任务的 stdout / stderr |
 
-高低水位：文件超过 **16MB** 时裁剪到最近 **8MB**（从行首开始，不切坏 JSON）。
+高低水位：文件超过 **16MB** 时裁剪到最近 **8MB**（只保留完整记录，不切坏 JSON）。
+单条输出超过 **8 KiB** 会被截断并附上 …[truncated]，避免一条巨行挤满整个窗口。
 
 ## 目录结构
 
