@@ -1,0 +1,139 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
+namespace HiroMuraki.Cronlet;
+
+/// <summary>
+/// JSONL 日志（每行一个 JSON，首字段固定为 RFC3339 带时区的 ts）：
+///   logs/runner.jsonl      —— Runner 自身事件
+///   logs/task-&lt;name&gt;.jsonl —— 每个任务的 stdout/stderr
+/// 每次写入时打开、写完即关闭；按高低水位轮转：超过 16MB 时裁剪到最近 8MB。
+/// </summary>
+internal static class Log
+{
+    private const long HighWatermark = 16L * 1024 * 1024;
+    private const long LowWatermark = HighWatermark / 2;
+
+    private static readonly object Gate = new();
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    public static void Event(string eventName, params (string Key, object? Value)[] fields)
+    {
+        lock (Gate)
+        {
+            try
+            {
+                Append("runner.jsonl", BuildLine(eventName, fields));
+            }
+            catch (Exception ex)
+            {
+                DebugWrite(ex);
+            }
+        }
+    }
+
+    public static void TaskOutput(string task, string stream, string line)
+    {
+        lock (Gate)
+        {
+            try
+            {
+                Append(TaskFile(task), BuildLine("task-output",
+                    new (string, object?)[] { ("task", task), ("stream", stream), ("line", line) }));
+            }
+            catch (Exception ex)
+            {
+                DebugWrite(ex);
+            }
+        }
+    }
+
+    private static string TaskFile(string task)
+    {
+        var name = new StringBuilder(task.Length);
+        foreach (var c in task)
+        {
+            name.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
+        }
+        var safe = name.Length == 0 ? "task" : name.ToString();
+        return $"task-{safe}.jsonl";
+    }
+
+    private static string BuildLine(string eventName, (string Key, object? Value)[] fields)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append("{\"ts\":").Append(JsonSerializer.Serialize(Timestamp(), JsonOpts));
+        sb.Append(",\"event\":").Append(JsonSerializer.Serialize(eventName, JsonOpts));
+        foreach (var (key, value) in fields)
+        {
+            sb.Append(',').Append(JsonSerializer.Serialize(key, JsonOpts)).Append(':');
+            sb.Append(value is null ? "null" : JsonSerializer.Serialize(value, value.GetType(), JsonOpts));
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    private static string Timestamp() =>
+        DateTimeOffset.Now.ToString("yyyy-MM-dd'T'HH:mm:ss.fffzzz", CultureInfo.InvariantCulture);
+
+    private static void Append(string file, string line)
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, file);
+        RotateIfNeeded(path);
+        File.AppendAllText(path, line + "\n", new UTF8Encoding(false));
+    }
+
+    /// <summary>超过高水位时，把文件裁剪到最近的低水位长度（从行首开始，避免切坏 JSON）。</summary>
+    private static void RotateIfNeeded(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length <= HighWatermark) return;
+
+            byte[] tail;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                var start = Math.Max(0, fs.Length - LowWatermark);
+                fs.Position = start;
+                using var ms = new MemoryStream();
+                fs.CopyTo(ms);
+                tail = ms.ToArray();
+            }
+
+            var newline = Array.IndexOf(tail, (byte)'\n');
+            if (newline >= 0 && newline + 1 < tail.Length)
+            {
+                tail = tail[(newline + 1)..];
+            }
+
+            File.WriteAllBytes(path, tail);
+        }
+        catch (Exception ex)
+        {
+            DebugWrite(ex);
+        }
+    }
+
+    private static void DebugWrite(Exception ex)
+    {
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "log-error.txt"),
+                $"{DateTimeOffset.Now:O} {ex}\n");
+        }
+        catch
+        {
+            // 忽略
+        }
+    }
+}
