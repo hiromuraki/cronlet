@@ -1,6 +1,3 @@
-using System.Threading;
-using System.Windows.Forms;
-
 namespace HiroMuraki.Cronlet;
 
 internal static class Program
@@ -29,10 +26,10 @@ internal static class Program
             if (e.ExceptionObject is Exception ex) Log.Event("unhandled-exception", ("message", ex.Message));
         };
 
-        var headless = args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase))
+        bool headless = args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase))
                        || !Environment.UserInteractive;
 
-        FileStream? instance = SingleInstance.TryAcquire();
+        var instance = SingleInstance.TryAcquire();
         if (instance is null)
         {
             Log.Event("instance-exit", ("reason", "already-running"), ("headless", headless));
@@ -83,7 +80,7 @@ internal static class Program
                 {
                     var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
                     ConfigValidator.Validate(newConfig);
-                    var error = await scheduler.ReloadAsync(newConfig);
+                    string? error = await scheduler.ReloadAsync(newConfig);
                     if (error is not null) return error;
                     Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));
                     return null;

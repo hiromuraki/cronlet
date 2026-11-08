@@ -8,7 +8,7 @@ internal static class ScriptResolver
 {
     public static string? Resolve(string script)
     {
-        var raw = Unquote(script);
+        string raw = Unquote(script);
         if (raw.Length == 0) return null;
 
         if (Path.IsPathRooted(raw))
@@ -16,10 +16,10 @@ internal static class ScriptResolver
             return File.Exists(raw) ? raw : null;
         }
 
-        var direct = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, raw));
+        string direct = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, raw));
         if (File.Exists(direct)) return direct;
 
-        var inScripts = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "scripts", raw));
+        string inScripts = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "scripts", raw));
         if (File.Exists(inScripts)) return inScripts;
 
         return null;
@@ -32,7 +32,7 @@ internal static class ScriptResolver
     /// </summary>
     public static bool LooksLikePath(string script)
     {
-        var s = Unquote(script);
+        string s = Unquote(script);
         if (s.Length == 0) return false;
         if (s.Contains("://", StringComparison.Ordinal)) return false;
         if (HasScriptExtension(s)) return true;
@@ -42,7 +42,7 @@ internal static class ScriptResolver
 
     private static string Unquote(string script)
     {
-        var s = script.Trim();
+        string s = script.Trim();
         return IsQuoted(s) ? s[1..^1].Trim() : s;
     }
 
@@ -52,7 +52,7 @@ internal static class ScriptResolver
 
     private static bool ContainsWhitespace(string s)
     {
-        foreach (var c in s)
+        foreach (char c in s)
         {
             if (char.IsWhiteSpace(c)) return true;
         }

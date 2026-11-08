@@ -26,7 +26,7 @@ public class SchedulerTests
         var task = Task("'hello'");
         Validate(task);
 
-        var psi = Scheduler.BuildStartInfo(task, out var cwd);
+        var psi = Scheduler.BuildStartInfo(task, out string cwd);
         Assert.Equal(CommandWrapper.ForCommand("'hello'"), psi.ArgumentList[^1]);
         Assert.Equal(AppContext.BaseDirectory, cwd);
     }
@@ -34,16 +34,16 @@ public class SchedulerTests
     [Fact]
     public void Path_with_spaces_is_validated_as_script()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "report.ps1");
+        string file = Path.Combine(dir, "report.ps1");
         File.WriteAllText(file, "'hi'\n");
         try
         {
             var task = Task(file);
             Validate(task);
 
-            var psi = Scheduler.BuildStartInfo(task, out var cwd);
+            var psi = Scheduler.BuildStartInfo(task, out string cwd);
             Assert.Equal(CommandWrapper.ForScript(file), psi.ArgumentList[^1]);
             Assert.Equal(dir, cwd);
         }

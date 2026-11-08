@@ -207,7 +207,7 @@ public sealed class Scheduler
                 Log.Event("schedule-none", ("task", task.name), ("cron", task.cron));
                 return;
             }
-            var jitter = task.jitter > 0 ? Random.Shared.Next(0, task.jitter + 1) : 0;
+            int jitter = task.jitter > 0 ? Random.Shared.Next(0, task.jitter + 1) : 0;
             _queue.Enqueue(task, next.Value.AddSeconds(jitter));
         }
         catch (Exception ex)
@@ -276,13 +276,13 @@ public sealed class Scheduler
 
     private async Task ExecuteAsync(TaskConfig task, TaskState st, int runId)
     {
-        var exitCode = -1;
-        var timedOut = false;
+        int exitCode = -1;
+        bool timedOut = false;
         var sw = Stopwatch.StartNew();
 
         try
         {
-            var psi = BuildStartInfo(task, out var cwd);
+            var psi = BuildStartInfo(task, out string cwd);
             psi.WorkingDirectory = cwd;
 
             using var proc = new Process { StartInfo = psi };
@@ -398,7 +398,7 @@ public sealed class Scheduler
     {
         if (_deferredReruns.Count == 0) return;
 
-        foreach (var name in _deferredReruns)
+        foreach (string name in _deferredReruns)
         {
             var task = _config.tasks.FirstOrDefault(t =>
                 t.enabled && string.Equals(t.name, name, StringComparison.OrdinalIgnoreCase));
@@ -429,7 +429,7 @@ public sealed class Scheduler
         psi.ArgumentList.Add("Bypass");
 
         // 先按文件解析：含空格的路径、带引号的路径都走这条路；解析不到才当命令。
-        var file = ScriptResolver.Resolve(task.script);
+        string? file = ScriptResolver.Resolve(task.script);
         psi.ArgumentList.Add("-Command");
         psi.ArgumentList.Add(file is not null
             ? CommandWrapper.ForScript(file)

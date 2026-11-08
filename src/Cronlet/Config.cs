@@ -63,7 +63,7 @@ cwd = ""                       # 工作目录，空则用脚本所在目录
             File.WriteAllText(path, DefaultTemplate, new UTF8Encoding(false));
         }
 
-        var text = File.ReadAllText(path);
+        string text = File.ReadAllText(path);
         var config = TomlSerializer.Deserialize<RunnerConfig>(text);
         return config ?? throw new Exception("配置为空");
     }

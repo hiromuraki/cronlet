@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Drawing;
 using System.Text;
-using System.Windows.Forms;
 
 namespace HiroMuraki.Cronlet;
 
@@ -29,7 +27,7 @@ internal sealed class TrayContext : ApplicationContext
             reloadItem.Enabled = false;
             try
             {
-                var error = await reload();
+                string? error = await reload();
                 if (error is not null)
                 {
                     MessageBox.Show(error, "Cronlet", MessageBoxButtons.OK, MessageBoxIcon.Error);

@@ -27,9 +27,9 @@ public class CommandWrapperTests
     [Fact]
     public void Failing_script_file_exits_nonzero()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "fail.ps1");
+        string file = Path.Combine(dir, "fail.ps1");
         File.WriteAllText(file, "Get-Item 'C:\\cronlet-no-such-file'\n");
         try
         {

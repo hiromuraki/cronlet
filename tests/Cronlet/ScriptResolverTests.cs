@@ -26,9 +26,9 @@ public class ScriptResolverTests
     [Fact]
     public void Resolve_strips_surrounding_quotes()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "quoted.ps1");
+        string file = Path.Combine(dir, "quoted.ps1");
         File.WriteAllText(file, "");
         try
         {
@@ -44,9 +44,9 @@ public class ScriptResolverTests
     [Fact]
     public void Resolve_accepts_path_with_spaces_without_quotes()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "report.ps1");
+        string file = Path.Combine(dir, "report.ps1");
         File.WriteAllText(file, "");
         try
         {

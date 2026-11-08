@@ -23,9 +23,9 @@ public class ConfigLoaderTests
     [Fact]
     public void LoadOrCreate_writes_template_when_missing()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "config.toml");
+        string path = Path.Combine(dir, "config.toml");
         try
         {
             var config = ConfigLoader.LoadOrCreate(path);
@@ -41,9 +41,9 @@ public class ConfigLoaderTests
     [Fact]
     public void LoadOrCreate_reads_existing_file()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "config.toml");
+        string path = Path.Combine(dir, "config.toml");
         try
         {
             File.WriteAllText(path, """

@@ -1,0 +1,28 @@
+# 分析器规则的收紧：这些默认只是 suggestion（有的还关着），这里提到 warning。
+# 两个前提：src 下四个项目开着 TreatWarningsAsErrors，所以 warning 等于编译不过；
+# IDE 开头的规则还要 csproj 里有 EnforceCodeStyleInBuild 才会参与 build。
+root = true
+
+[*.cs]
+dotnet_diagnostic.CA1036.severity     = warning   # 可比较类型应一并给出比较运算符
+dotnet_diagnostic.CA1305.severity     = warning   # 显式给出 IFormatProvider
+dotnet_diagnostic.CA1310.severity     = warning   # 显式给出 StringComparison
+dotnet_diagnostic.CA1727.severity     = warning   # 日志占位符用 PascalCase
+dotnet_diagnostic.CA1861.severity     = warning   # 别把数组字面量当实参
+dotnet_diagnostic.CA2016.severity     = warning   # 转发取消令牌
+dotnet_diagnostic.IDE0005.severity    = warning   # 移除不必要的 using 指令
+dotnet_diagnostic.SYSLIB1045.severity = warning   # 正则改用 GeneratedRegex
+dotnet_diagnostic.IDE0004.severity    = warning   # 不必要的强制转换
+
+# 基元用显式类型，其余用 var
+csharp_style_var_for_built_in_types    = false:warning
+csharp_style_var_when_type_is_apparent = true:warning
+csharp_style_var_elsewhere             = true:warning
+
+# 格式配置
+trim_trailing_whitespace = true     # 移除尾空格
+insert_final_newline     = true     # 添加尾换行
+indent_style             = space    # 用空格缩进（vs tab）
+indent_size              = 4        # 缩进 4 空格
+charset                  = utf-8    # UTF8
+end_of_line              = lf       # LF 换行

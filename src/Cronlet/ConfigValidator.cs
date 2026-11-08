@@ -14,7 +14,7 @@ public static class ConfigValidator
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in config.tasks)
         {
-            var label = string.IsNullOrWhiteSpace(t.name) ? "(未命名)" : t.name;
+            string label = string.IsNullOrWhiteSpace(t.name) ? "(未命名)" : t.name;
             if (string.IsNullOrWhiteSpace(t.name)) throw new Exception("存在没有 name 的任务");
             if (!names.Add(t.name)) throw new Exception($"任务名称重复: {t.name}");
             if (string.IsNullOrWhiteSpace(t.script)) throw new Exception($"任务 {label}: script 不能为空");
@@ -42,7 +42,7 @@ public static class ConfigValidator
                 throw new Exception($"任务 {label}: cron 非法 ({t.cron}): {ex.Message}");
             }
 
-            var minInterval = MinIntervalSeconds(cron);
+            double? minInterval = MinIntervalSeconds(cron);
             if (minInterval is not null && t.jitter >= minInterval)
             {
                 throw new Exception(
@@ -58,11 +58,11 @@ public static class ConfigValidator
         if (current is null) return null;
 
         double? min = null;
-        for (var i = 0; i < 128; i++)
+        for (int i = 0; i < 128; i++)
         {
             var next = cron.GetNextOccurrence(current.Value, Tz);
             if (next is null) break;
-            var seconds = (next.Value - current.Value).TotalSeconds;
+            double seconds = (next.Value - current.Value).TotalSeconds;
             if (min is null || seconds < min) min = seconds;
             current = next;
         }

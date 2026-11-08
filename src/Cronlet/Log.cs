@@ -56,11 +56,11 @@ internal static class Log
     private static string TaskFile(string task)
     {
         var name = new StringBuilder(task.Length);
-        foreach (var c in task)
+        foreach (char c in task)
         {
             name.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
         }
-        var safe = name.Length == 0 ? "task" : name.ToString();
+        string safe = name.Length == 0 ? "task" : name.ToString();
         return $"task-{safe}.jsonl";
     }
 
@@ -83,9 +83,9 @@ internal static class Log
 
     private static void Append(string file, string line)
     {
-        var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+        string dir = Path.Combine(AppContext.BaseDirectory, "logs");
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, file);
+        string path = Path.Combine(dir, file);
         RotateIfNeeded(path);
         File.AppendAllText(path, line + "\n", new UTF8Encoding(false));
     }
@@ -101,7 +101,7 @@ internal static class Log
             byte[] tail;
             using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                var start = Math.Max(0, fs.Length - LowWatermark);
+                long start = Math.Max(0, fs.Length - LowWatermark);
                 fs.Position = start;
                 using var ms = new MemoryStream();
                 fs.CopyTo(ms);
@@ -122,11 +122,11 @@ internal static class Log
     /// </summary>
     internal static byte[] RotateTail(byte[] tail)
     {
-        var first = Array.IndexOf(tail, (byte)'\n');
+        int first = Array.IndexOf(tail, (byte)'\n');
         if (first < 0) return [];
 
-        var keep = tail[(first + 1)..];
-        var last = Array.LastIndexOf(keep, (byte)'\n');
+        byte[] keep = tail[(first + 1)..];
+        int last = Array.LastIndexOf(keep, (byte)'\n');
         if (last < 0) return [];
 
         return last + 1 < keep.Length ? keep[..(last + 1)] : keep;
@@ -136,7 +136,7 @@ internal static class Log
     {
         try
         {
-            var dir = Path.Combine(AppContext.BaseDirectory, "logs");
+            string dir = Path.Combine(AppContext.BaseDirectory, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "log-error.txt"),
                 $"{DateTimeOffset.Now:O} {ex}\n");
