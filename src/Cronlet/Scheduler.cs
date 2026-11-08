@@ -137,23 +137,27 @@ internal sealed class Scheduler
             {
                 DateTime? next = null;
                 bool reloading;
+                Task wake;
 
+                // 下次触发时间与当前唤醒任务必须在同一把锁里取，否则重载可能在这两步
+                // 之间换掉唤醒源，循环会抱着旧队列的延迟睡满整个上限。
                 lock (_gate)
                 {
                     if (_stopRequested) return;
                     reloading = _reloading;
+                    wake = _wake.Task;
                     if (!reloading && _queue.TryPeek(out _, out var when)) next = when;
                 }
 
                 if (reloading)
                 {
-                    await WaitOrWakeAsync(TimeSpan.FromMilliseconds(200));
+                    await WaitOrWakeAsync(TimeSpan.FromMilliseconds(200), wake);
                     continue;
                 }
 
                 if (next is null)
                 {
-                    await WaitOrWakeAsync(TimeSpan.FromSeconds(30));
+                    await WaitOrWakeAsync(TimeSpan.FromSeconds(30), wake);
                     continue;
                 }
 
@@ -162,7 +166,7 @@ internal sealed class Scheduler
                 {
                     var delay = next.Value - now;
                     if (delay > TimeSpan.FromSeconds(60)) delay = TimeSpan.FromSeconds(60);
-                    await WaitOrWakeAsync(delay);
+                    await WaitOrWakeAsync(delay, wake);
                     continue;
                 }
 
@@ -208,6 +212,10 @@ internal sealed class Scheduler
     /// </summary>
     private string? FireLocked(TaskConfig task)
     {
+        // 停止之后不再登记新的运行名额：停止路径只负责终止已在跑的进程，
+        // 不能因为一次补跑又拉起新的子进程。
+        if (_stopRequested) return null;
+
         var st = GetStateLocked(task);
         string? policy = null;
 
@@ -244,6 +252,12 @@ internal sealed class Scheduler
 
         try
         {
+            // 启动前定夺：已经停止，或这次运行已被 kill 策略替换（RunId 被覆盖）时，
+            // 直接放弃启动，避免留下一个绕过停止/替换的子进程。
+            bool startable;
+            lock (_gate) { startable = !_stopRequested && st.RunId == runId; }
+            if (!startable) return;
+
             var psi = BuildStartInfo(task, out string? cwd);
 
             using var proc = new Process { StartInfo = psi };
@@ -261,11 +275,6 @@ internal sealed class Scheduler
 
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
-
-            if (StopRequested)
-            {
-                try { proc.Kill(true); } catch { }
-            }
 
             if (task.timeout > 0)
             {
@@ -326,7 +335,7 @@ internal sealed class Scheduler
                 _idle = null;
             }
 
-            if (rerun)
+            if (rerun && !_stopRequested)
             {
                 if (_reloading)
                 {
@@ -375,14 +384,6 @@ internal sealed class Scheduler
         return st;
     }
 
-    private bool StopRequested
-    {
-        get
-        {
-            lock (_gate) return _stopRequested;
-        }
-    }
-
     private void TryEnqueueLocked(TaskConfig task)
     {
         try
@@ -403,11 +404,9 @@ internal sealed class Scheduler
         }
     }
 
-    private async Task WaitOrWakeAsync(TimeSpan delay)
+    private async Task WaitOrWakeAsync(TimeSpan delay, Task wake)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(_ct);
-        Task wake;
-        lock (_gate) { wake = _wake.Task; }
 
         try
         {

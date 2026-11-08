@@ -13,10 +13,6 @@ internal static class CommandWrapper
         "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);" +
         " $ErrorActionPreference='Stop';";
 
-    /// <summary>执行脚本文件：路径中的单引号需要转义。</summary>
-    public static string ForScript(string path) =>
-        Wrap("& '" + path.Replace("'", "''") + "'");
-
     /// <summary>执行一段用户命令。</summary>
     public static string ForCommand(string command) => Wrap(command);
 

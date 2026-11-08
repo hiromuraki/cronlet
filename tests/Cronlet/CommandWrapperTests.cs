@@ -29,23 +29,6 @@ public class CommandWrapperTests
     public void Command_ending_with_line_comment_still_runs()
         => Assert.Equal(0, Run(CommandWrapper.ForCommand("Write-Output ready # note")));
 
-    [Fact]
-    public void Failing_script_file_exits_nonzero()
-    {
-        string dir = Path.Combine(Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        string file = Path.Combine(dir, "fail.ps1");
-        File.WriteAllText(file, "Get-Item 'C:\\cronlet-no-such-file'\n");
-        try
-        {
-            Assert.NotEqual(0, Run(CommandWrapper.ForScript(file)));
-        }
-        finally
-        {
-            Directory.Delete(dir, recursive: true);
-        }
-    }
-
     private static int Run(string command)
     {
         var psi = new ProcessStartInfo("pwsh.exe")
