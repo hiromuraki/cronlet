@@ -1,3 +1,6 @@
+using DotTray;
+using DotTray.Items;
+
 namespace HiroMuraki.Cronlet;
 
 internal static class Program
@@ -18,19 +21,13 @@ internal static class Program
         catch (Exception ex)
         {
             Log.Event("fatal", ("message", ex.Message));
-            if (!headless)
-            {
-                MessageBox.Show($"Cronlet 启动失败：\n\n{ex}", "Cronlet",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            if (!headless) ShowFatal($"启动失败：{ex.Message}");
             return ExitStartupError;
         }
     }
 
     private static int Run(bool headless)
     {
-        ApplicationConfiguration.Initialize();
-
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             if (e.ExceptionObject is Exception ex) Log.Event("unhandled-exception", ("message", ex.Message));
@@ -56,11 +53,7 @@ internal static class Program
         catch (Exception ex)
         {
             Log.Event("config-error", ("message", ex.Message));
-            if (!headless)
-            {
-                MessageBox.Show($"配置错误：\n\n{ex.Message}\n\n配置文件：{ConfigLoader.ConfigPath}",
-                    "Cronlet", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            if (!headless) ShowFatal($"配置错误：{ex.Message}");
             return ExitConfigError;
         }
 
@@ -71,38 +64,74 @@ internal static class Program
 
         AppDomain.CurrentDomain.ProcessExit += (_, _) => scheduler.Stop();
 
-        if (headless)
+        TrayContext? tray = null;
+        try
         {
-            // 后台模式：无托盘，只跑调度；进程退出时由 ProcessExit / Job 对象收尾
-            Thread.Sleep(Timeout.Infinite);
-        }
+            if (!headless)
+            {
+                tray = new TrayContext(
+                    ConfigLoader.ConfigPath,
+                    () =>
+                    {
+                        cts.Cancel();
+                        scheduler.Stop();
+                    },
+                    async () =>
+                    {
+                        try
+                        {
+                            var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
+                            // 校验可能包含一次 PowerShell 探测，放到后台线程，别卡住托盘
+                            string newPwsh = await Task.Run(
+                                () => ConfigValidator.Validate(newConfig, cts.Token), cts.Token);
+                            string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
+                            if (error is not null) return error;
+                            Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));
+                            return null;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Event("config-error", ("message", ex.Message));
+                            return "配置错误: " + ex.Message;
+                        }
+                    },
+                    cts.Token);
+            }
 
-        using var context = new TrayContext(ConfigLoader.ConfigPath,
-            () =>
+            // 主线程只负责等待退出信号；调度与托盘各自跑在后台线程上
+            cts.Token.WaitHandle.WaitOne();
+            return 0;
+        }
+        finally
+        {
+            tray?.Dispose();
+            scheduler.Stop();
+        }
+    }
+
+    /// <summary>交互模式下用一个临时托盘图标把错误气泡出来，几秒后退出。</summary>
+    private static void ShowFatal(string message)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            using var menu = new DefaultPopupMenuHandler();
+            menu.Items.Add(new MenuItem { Text = "关闭", Clicked = _ => cts.Cancel() });
+
+            using var icon = NotifyIcon.Run(TrayContext.IconPath, menu, cts.Token);
+            icon.SetToolTip("Cronlet 启动失败");
+            icon.ShowBalloon(new BalloonNotification
             {
-                cts.Cancel();
-                scheduler.Stop();
-            },
-            async () =>
-            {
-                try
-                {
-                    var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-                    // 校验可能包含一次 PowerShell 探测，放到后台线程，别卡住托盘
-                    string newPwsh = await Task.Run(() => ConfigValidator.Validate(newConfig, cts.Token), cts.Token);
-                    string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
-                    if (error is not null) return error;
-                    Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));
-                    return null;
-                }
-                catch (Exception ex)
-                {
-                    Log.Event("config-error", ("message", ex.Message));
-                    return "配置错误: " + ex.Message;
-                }
+                Title = "Cronlet",
+                Message = message,
+                Icon = BalloonNotificationIcon.Error,
             });
 
-        Application.Run(context);
-        return 0;
+            cts.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(6));
+        }
+        catch
+        {
+            // 托盘不可用时只留日志
+        }
     }
 }

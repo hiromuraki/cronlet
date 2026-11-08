@@ -1,72 +1,67 @@
 using System.Diagnostics;
+using DotTray;
+using DotTray.Items;
 
 namespace HiroMuraki.Cronlet;
 
 /// <summary>
-/// 托盘外壳：打开配置 TOML / 重载配置 / 退出。
+/// 托盘外壳：打开配置文件 / 打开脚本目录 / 打开日志目录 / 重载配置 / 退出。
+/// 基于 DotTray（直接用 Win32 shell API），不依赖 WinForms，因此可以走 NativeAOT。
 /// </summary>
-internal sealed class TrayContext : ApplicationContext
+internal sealed class TrayContext : IDisposable
 {
-    private readonly NotifyIcon _tray;
-    private readonly ContextMenuStrip _menu;
+    private readonly DefaultPopupMenuHandler _menu = new();
+    private readonly NotifyIcon<DefaultPopupMenuHandler> _icon;
     private readonly string _configPath;
-    private readonly Action _onExit;
 
-    public TrayContext(string configPath, Action onExit, Func<Task<string?>> reload)
+    public TrayContext(string configPath, Action onExit, Func<Task<string?>> reload, CancellationToken ct)
     {
         _configPath = configPath;
-        _onExit = onExit;
 
-        _menu = new ContextMenuStrip();
-        _menu.Items.Add("打开配置文件", null, (_, _) => OpenConfig());
-        _menu.Items.Add("打开脚本目录", null, (_, _) => OpenFolder(Paths.Scripts));
-        _menu.Items.Add("打开日志目录", null, (_, _) => OpenFolder(Paths.Logs));
+        _menu.Items.Add(new MenuItem { Text = "打开配置文件", Clicked = _ => OpenConfig() });
+        _menu.Items.Add(new MenuItem { Text = "打开脚本目录", Clicked = _ => OpenFolder(Paths.Scripts) });
+        _menu.Items.Add(new MenuItem { Text = "打开日志目录", Clicked = _ => OpenFolder(Paths.Logs) });
+        _menu.Items.Add(SeparatorItem.Instance);
 
-        var reloadItem = new ToolStripMenuItem("重载配置");
-        reloadItem.Click += async (_, _) =>
+        var reloadItem = new MenuItem { Text = "重载配置" };
+        reloadItem.Clicked = _ => Reload(reloadItem, reload);
+        _menu.Items.Add(reloadItem);
+
+        _menu.Items.Add(SeparatorItem.Instance);
+        _menu.Items.Add(new MenuItem { Text = "退出", Clicked = _ => onExit() });
+
+        _icon = NotifyIcon.Run(IconPath, _menu, ct);
+        _icon.SetToolTip("Cronlet");
+    }
+
+    /// <summary>托盘图标路径：与 exe 同目录的 runner.ico。</summary>
+    internal static string IconPath => Path.Combine(Paths.Base, "runner.ico");
+
+    private void Reload(MenuItem item, Func<Task<string?>> reload)
+    {
+        item.IsDisabled = true;
+
+        _ = Task.Run(async () =>
         {
-            reloadItem.Enabled = false;
             try
             {
                 string? error = await reload();
-                if (error is not null)
-                {
-                    MessageBox.Show(error, "Cronlet", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("重载失败：" + ex.Message, "Cronlet",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (error is not null) ShowError(error);
             }
             finally
             {
-                reloadItem.Enabled = true;
+                item.IsDisabled = false;
             }
-        };
-        _menu.Items.Add(reloadItem);
-
-        _menu.Items.Add(new ToolStripSeparator());
-        _menu.Items.Add("退出", null, (_, _) => ExitApp());
-
-        _tray = new NotifyIcon
-        {
-            Icon = LoadAppIcon(),
-            Text = "Cronlet",
-            Visible = true,
-            ContextMenuStrip = _menu,
-        };
+        });
     }
 
-    private static Icon LoadAppIcon()
-    {
-        using var stream = typeof(TrayContext).Assembly.GetManifestResourceStream("HiroMuraki.Cronlet.runner.ico");
-        if (stream is not null)
+    private void ShowError(string message) =>
+        _icon.ShowBalloon(new BalloonNotification
         {
-            return new Icon(stream, SystemInformation.SmallIconSize);
-        }
-        return Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? SystemIcons.Application;
-    }
+            Title = "Cronlet",
+            Message = message,
+            Icon = BalloonNotificationIcon.Error,
+        });
 
     private void OpenConfig()
     {
@@ -77,8 +72,7 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"打开配置失败：{ex.Message}", "Cronlet",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ShowError($"打开配置失败：{ex.Message}");
         }
     }
 
@@ -91,25 +85,9 @@ internal sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"打开目录失败：{ex.Message}", "Cronlet",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            Log.Event("open-folder-failed", ("path", path), ("message", ex.Message));
         }
     }
 
-    private void ExitApp()
-    {
-        _onExit();
-        _tray.Visible = false;   // 立即隐藏图标，释放交给 Dispose
-        ExitThread();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _menu.Dispose();
-            _tray.Dispose();
-        }
-        base.Dispose(disposing);
-    }
+    public void Dispose() => _icon.Dispose();
 }

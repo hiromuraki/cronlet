@@ -3,18 +3,17 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net11.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Cronlet</AssemblyName>
     <RootNamespace>HiroMuraki.Cronlet</RootNamespace>
-    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>runner.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="runner.ico" />
+    <!-- 托盘图标需要真实文件路径，不再嵌进程序集 -->
+    <None Update="runner.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,8 +22,8 @@
 
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.13.0" />
+    <PackageReference Include="DotTray" Version="3.0.0" />
     <PackageReference Include="Tomlyn" Version="2.11.0" />
   </ItemGroup>
 
 </Project>
-
