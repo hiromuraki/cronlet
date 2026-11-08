@@ -7,24 +7,23 @@ internal static class ConfigValidator
     /// <summary>timeout 上限。计时器能表达的最大延迟约 49.7 天，这里留足余量取 30 天。</summary>
     public const int MaxTimeoutSeconds = 30 * 24 * 60 * 60;
 
+    /// <summary>任务名同时是日志文件名的组成部分，因此限制长度。</summary>
+    public const int MaxNameLength = 128;
+
     private static readonly TimeZoneInfo Tz = TimeZoneInfo.Local;
 
     public static void Validate(RunnerConfig config)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var logFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var t in config.tasks)
         {
             string label = string.IsNullOrWhiteSpace(t.name) ? "(未命名)" : t.name;
             if (string.IsNullOrWhiteSpace(t.name)) throw new Exception("存在没有 name 的任务");
+            if (!IsValidName(t.name))
+                throw new Exception(
+                    $"任务 {label}: name 只能包含字母、数字、下划线和短横线，且不超过 {MaxNameLength} 个字符");
             if (!names.Add(t.name)) throw new Exception($"任务名称重复: {t.name}");
-
-            // 日志文件名会把符号折成下划线，两个不同的任务名可能落到同一个文件
-            string logFile = Log.TaskFileName(t.name);
-            if (logFiles.TryGetValue(logFile, out string? other))
-                throw new Exception($"任务 {label}: 与任务 {other} 映射到同一个日志文件 {logFile}");
-            logFiles[logFile] = t.name;
 
             if (string.IsNullOrWhiteSpace(t.command)) throw new Exception($"任务 {label}: command 不能为空");
             if (t.jitter < 0) throw new Exception($"任务 {label}: jitter 不能为负");
@@ -51,5 +50,18 @@ internal static class ConfigValidator
             if (t.enabled && cron.GetNextOccurrence(DateTime.UtcNow, Tz) is null)
                 throw new Exception($"任务 {label}: cron 永远不会触发 ({t.cron})");
         }
+    }
+
+    /// <summary>任务名直接拼进日志文件名，所以只允许不会引入路径语义的字符。</summary>
+    private static bool IsValidName(string name)
+    {
+        if (name.Length > MaxNameLength) return false;
+
+        foreach (char c in name)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c is not ('_' or '-')) return false;
+        }
+
+        return true;
     }
 }

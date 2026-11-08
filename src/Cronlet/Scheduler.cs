@@ -28,6 +28,7 @@ internal sealed class Scheduler
     private int _runSeq;
     private bool _reloading;
     private bool _stopRequested;
+    private int _jobWarning;
 
     public Scheduler(RunnerConfig config, CancellationToken ct)
     {
@@ -272,7 +273,12 @@ internal sealed class Scheduler
             }
             if (!started) return;
 
-            ChildJob.Assign(proc);
+            // Job 只覆盖加入之后的进程；失败只记一次，避免每个任务都刷一行
+            if (!ChildJob.TryAssign(proc, out string? jobError) && Interlocked.Exchange(ref _jobWarning, 1) == 0)
+            {
+                Log.Event("job-assign-failed", ("task", task.name), ("error", jobError));
+            }
+
             Log.Event("task-start", ("task", task.name), ("pid", proc.Id));
 
             proc.BeginOutputReadLine();
@@ -399,8 +405,8 @@ internal sealed class Scheduler
             }
 
             var nextNominal = cron.GetNextOccurrence(nominal.Value, TimeZoneInfo.Local);
-            int jitter = ClampJitter(task.jitter, nominal.Value, nextNominal);
-            _queue.Enqueue(task, nominal.Value.AddSeconds(jitter));
+            int limit = ClampJitter(task.jitter, nominal.Value, nextNominal);
+            _queue.Enqueue(task, nominal.Value.AddSeconds(PickJitter(limit)));
         }
         catch (Exception ex)
         {
@@ -419,6 +425,13 @@ internal sealed class Scheduler
 
         int room = (int)Math.Floor((nextNominal.Value - nominal).TotalSeconds) - 1;
         return room <= 0 ? 0 : Math.Min(configured, room);
+    }
+
+    /// <summary>在 0..上限之间取一个随机抖动；随机源可注入以便测试。</summary>
+    internal static int PickJitter(int limit, Random? random = null)
+    {
+        if (limit <= 0) return 0;
+        return (random ?? Random.Shared).Next(0, limit + 1);
     }
 
     private async Task WaitOrWakeAsync(TimeSpan delay, Task wake)

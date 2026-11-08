@@ -36,7 +36,7 @@ internal static class ConfigLoader
 #
 # 每个 [[tasks]] 定义一个任务，可以写多组。
 #
-#   name        任务名（唯一，日志里用它标识）
+#   name        任务名（唯一，日志里用它标识；字母数字 _ - ，最长 128）
 #   enabled     是否启用
 #   command     pwsh 命令；相对路径以 exe 目录为当前目录
 #               例：./scripts/login.ps1   或   echo hello

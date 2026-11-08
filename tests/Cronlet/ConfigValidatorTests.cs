@@ -118,11 +118,33 @@ public class ConfigValidatorTests
         ConfigValidator.Validate(Wrap(task));
     }
 
-    [Fact]
-    public void Names_mapping_to_the_same_log_file_are_rejected()
+    [Theory]
+    [InlineData("job")]
+    [InlineData("Job-1_2")]
+    [InlineData("A")]
+    public void Valid_name_characters_pass(string name) => ConfigValidator.Validate(Wrap(Valid(name)));
+
+    [Theory]
+    [InlineData("a/b")]
+    [InlineData("a b")]
+    [InlineData("作业")]
+    [InlineData("a.b")]
+    public void Invalid_name_characters_are_rejected(string name)
     {
-        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid("a/b"), Valid("a_b"))));
-        Assert.Contains("日志文件", ex.Message);
+        var ex = Assert.Throws<Exception>(() => ConfigValidator.Validate(Wrap(Valid(name))));
+        Assert.Contains("name", ex.Message);
+    }
+
+    [Fact]
+    public void Name_of_max_length_passes() =>
+        ConfigValidator.Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength))));
+
+    [Fact]
+    public void Name_above_max_length_is_rejected()
+    {
+        var ex = Assert.Throws<Exception>(() =>
+            ConfigValidator.Validate(Wrap(Valid(new string('a', ConfigValidator.MaxNameLength + 1)))));
+        Assert.Contains("128", ex.Message);
     }
 
     [Fact]

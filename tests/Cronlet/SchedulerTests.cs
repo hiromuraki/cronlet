@@ -80,4 +80,27 @@ public class SchedulerTests
     [Fact]
     public void ClampJitter_keeps_config_when_there_is_no_next_occurrence() =>
         Assert.Equal(7200, Scheduler.ClampJitter(7200, DateTime.UtcNow, null));
+
+    [Fact]
+    public void PickJitter_is_zero_without_room() => Assert.Equal(0, Scheduler.PickJitter(0));
+
+    [Fact]
+    public void PickJitter_uses_the_random_source()
+    {
+        Assert.Equal(0, Scheduler.PickJitter(10, new FixedRandom(0)));
+        Assert.Equal(5, Scheduler.PickJitter(10, new FixedRandom(5)));
+        Assert.Equal(10, Scheduler.PickJitter(10, new FixedRandom(10)));
+    }
+
+    [Fact]
+    public void PickJitter_varies_across_calls()
+    {
+        int distinct = Enumerable.Range(0, 50).Select(_ => Scheduler.PickJitter(10)).Distinct().Count();
+        Assert.True(distinct > 1, "抖动应当随机，而不是每次都取上限");
+    }
+
+    private sealed class FixedRandom(int value) : Random
+    {
+        public override int Next(int minValue, int maxValue) => value;
+    }
 }

@@ -7,6 +7,8 @@ namespace HiroMuraki.Cronlet;
 /// 子进程 Job 对象：KILL_ON_JOB_CLOSE。
 /// Runner 无论正常退出还是被强杀，OS 都会关闭 Job 句柄，
 /// 从而连带结束所有子进程，避免残留 pwsh。
+/// 注意：只覆盖加入 Job 之后的进程。命令在 <c>Start()</c> 之后、<c>TryAssign</c> 之前
+/// 就派生出的后代可能逃逸，所以这是尽力清理，不是硬保证。
 /// </summary>
 internal static class ChildJob
 {
@@ -14,13 +16,18 @@ internal static class ChildJob
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
 
     private static readonly IntPtr Handle;
+    private static readonly string? InitError;
 
     static ChildJob()
     {
         try
         {
             Handle = CreateJobObjectW(IntPtr.Zero, null);
-            if (Handle == IntPtr.Zero) return;
+            if (Handle == IntPtr.Zero)
+            {
+                InitError = $"CreateJobObject failed: {Marshal.GetLastWin32Error()}";
+                return;
+            }
 
             var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
             {
@@ -29,25 +36,43 @@ internal static class ChildJob
                     LimitFlags = JobObjectLimitKillOnJobClose,
                 },
             };
-            SetInformationJobObject(Handle, JobObjectExtendedLimitInformation, ref info,
-                Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>());
+
+            if (!SetInformationJobObject(Handle, JobObjectExtendedLimitInformation, ref info,
+                    Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>()))
+            {
+                InitError = $"SetInformationJobObject failed: {Marshal.GetLastWin32Error()}";
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // 无法创建 Job 时退化为普通行为
+            InitError = ex.Message;
         }
     }
 
-    public static void Assign(Process process)
+    /// <summary>把子进程加入 Job；失败时返回 false 与原因，由调用方决定是否记录。</summary>
+    public static bool TryAssign(Process process, out string? error)
     {
-        if (Handle == IntPtr.Zero) return;
+        if (Handle == IntPtr.Zero)
+        {
+            error = InitError ?? "job object unavailable";
+            return false;
+        }
+
         try
         {
-            AssignProcessToJobObject(Handle, process.Handle);
+            if (!AssignProcessToJobObject(Handle, process.Handle))
+            {
+                error = $"AssignProcessToJobObject failed: {Marshal.GetLastWin32Error()}";
+                return false;
+            }
+
+            error = null;
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // 忽略：作业分配失败不影响任务执行
+            error = ex.Message;
+            return false;
         }
     }
 

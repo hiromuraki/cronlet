@@ -53,16 +53,8 @@ internal static class Log
         }
     }
 
-    internal static string TaskFileName(string task)
-    {
-        var name = new StringBuilder(task.Length);
-        foreach (char c in task)
-        {
-            name.Append(char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_');
-        }
-        string safe = name.Length == 0 ? "task" : name.ToString();
-        return $"task-{safe}.jsonl";
-    }
+    /// <summary>任务名已被校验限制为字母、数字、下划线和短横线，可以直接拼进文件名。</summary>
+    internal static string TaskFileName(string name) => $"task-{name}.jsonl";
 
     private static string BuildLine(string eventName, (string Key, object? Value)[] fields)
     {
