@@ -55,7 +55,8 @@ jobs:
           name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
 
-  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release`n  # 发布为 prerelease，不影响正式版本的最新发行标记
+  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release
+  # 发布为 prerelease，不影响正式版本的最新发行标记
   release:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -71,13 +72,28 @@ jobs:
           path: aot
 
       - name: Release (NativeAOT)
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: >
-          gh release create "aot-${{ github.run_number }}"
-          aot/Cronlet.exe
-          --target ${{ github.sha }}
-          --prerelease
-          --title "AOT build ${{ github.run_number }}"
-          --notes "NativeAOT experiment build from ${{ github.sha }}"
+        run: |
+          # 重跑同一运行会得到相同的 run_number；已存在时校验指向后再复用，
+          # 否则 gh release create 会对同标签报错，让整次工作流失败
+          tag="aot-${{ github.run_number }}"
+          existing="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null || true)"
+
+          if [ -n "$existing" ]; then
+            if [ "$existing" != "${GITHUB_SHA}" ]; then
+              echo "::error::tag ${tag} points at ${existing}, expected ${GITHUB_SHA}"
+              exit 1
+            fi
+            echo "release ${tag} already exists for ${GITHUB_SHA}; refreshing asset"
+            gh release upload "$tag" aot/Cronlet.exe --clobber
+            exit 0
+          fi
+
+          gh release create "$tag" aot/Cronlet.exe \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "AOT build ${{ github.run_number }}" \
+            --notes "NativeAOT build from $GITHUB_SHA"

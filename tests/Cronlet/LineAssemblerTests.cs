@@ -116,4 +116,26 @@ public class LineAssemblerTests
 
         Assert.Equal("abcd" + Log.TruncatedSuffix, Assert.Single(FeedAll(assembler, "abcdef\n")));
     }
+    [Fact]
+    public void Truncation_drops_a_supplementary_plane_combining_cluster()
+    {
+        var assembler = new LineAssembler(8192);
+
+        // U+1D165 是补充平面的组合符号（代理对），旧实现只按单个码元分类，会漏掉它
+        string line = new string('a', 8191) + "e\U0001D165z";
+        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+
+        Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
+    }
+
+    [Fact]
+    public void Truncation_drops_a_zwj_cluster()
+    {
+        var assembler = new LineAssembler(8192);
+
+        string line = new string('a', 8191) + "e\u200Dz";
+        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+
+        Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
+    }
 }

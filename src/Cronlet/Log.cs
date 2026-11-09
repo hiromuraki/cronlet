@@ -60,9 +60,9 @@ internal static class Log
     /// 单条输出超过上限时截断，避免一条巨行挤满轮转窗口。上限按 UTF-8 字节计，
     /// 截断点落在完整的字形簇（grapheme cluster）边界上，不会切出半个字符或半个代理对。
     /// </summary>
-    internal static string TruncateLine(string line)
+    internal static string TruncateLine(string line, int maxBytes = MaxLineBytes)
     {
-        if (Encoding.UTF8.GetByteCount(line) <= MaxLineBytes) return line;
+        if (Encoding.UTF8.GetByteCount(line) <= maxBytes) return line;
 
         // 逐簇扫描到上限即停：不为整行分配边界数组，也不为每个簇生成子字符串
         int cut = 0;
@@ -74,7 +74,7 @@ internal static class Log
             int length = StringInfo.GetNextTextElementLength(rest);
             int size = Encoding.UTF8.GetByteCount(rest[..length]);
 
-            if (used + size > MaxLineBytes) break;
+            if (used + size > maxBytes) break;
 
             used += size;
             cut += length;
@@ -190,20 +190,26 @@ internal static class Log
                 hasSentinel = windowStart > 0;
 
                 // 多读一个字节作为哨兵，用来判断窗口是否正好落在行首
-                fs.Position = hasSentinel ? windowStart - 1 : 0;
-                using var ms = new MemoryStream();
-                fs.CopyTo(ms);
-                window = ms.ToArray();
+                long readFrom = hasSentinel ? windowStart - 1 : 0;
+
+                // 一次性读进定长缓冲：不经 MemoryStream、不 ToArray、不切片
+                window = new byte[fs.Length - readFrom];
+                fs.Position = readFrom;
+                fs.ReadExactly(window);
             }
 
-            byte[] keep = RotateTail(window, hasSentinel);
+            var (offset, count) = RotateRange(window, hasSentinel);
 
             // 先写临时文件再替换：截断与写回之间被强制结束时，原日志仍然完整
             string temp = path + ".rotating";
 
             try
             {
-                File.WriteAllBytes(temp, keep);
+                using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write))
+                {
+                    output.Write(window, offset, count);
+                }
+
                 File.Move(temp, path, overwrite: true);
             }
             catch (Exception ex)
@@ -220,17 +226,18 @@ internal static class Log
     }
 
     /// <summary>
-    /// 从低水位窗口里裁出完整记录。<paramref name="hasSentinel"/> 为 true 时 window 的
+    /// 从低水位窗口里找出完整记录的区间。<paramref name="hasSentinel"/> 为 true 时 window 的
     /// 首字节是"窗口前一个字节"：它是换行说明窗口正好从行首开始，此时第一行本身是完整
     /// 记录，不能丢弃；否则窗口从记录中间开始，要跳过那段残行。末尾同样只保留完整行。
+    /// 返回区间而不是新数组，调用方直接写出，避免再复制一份窗口。
     /// </summary>
-    internal static byte[] RotateTail(byte[] window, bool hasSentinel)
+    internal static (int Offset, int Count) RotateRange(byte[] window, bool hasSentinel)
     {
         int offset = 0;
 
         if (hasSentinel)
         {
-            if (window.Length == 0) return [];
+            if (window.Length == 0) return (0, 0);
 
             if (window[0] == (byte)'\n')
             {
@@ -239,16 +246,22 @@ internal static class Log
             else
             {
                 int first = Array.IndexOf(window, (byte)'\n', 1);
-                if (first < 0) return [];
+                if (first < 0) return (0, 0);
                 offset = first + 1;
             }
         }
 
-        byte[] keep = window[offset..];
-        int last = Array.LastIndexOf(keep, (byte)'\n');
-        if (last < 0) return [];
+        int last = Array.LastIndexOf(window, (byte)'\n');
+        if (last < offset) return (0, 0);
 
-        return last + 1 < keep.Length ? keep[..(last + 1)] : keep;
+        return (offset, last + 1 - offset);
+    }
+
+    /// <summary>测试用的数组形式，等价于把 <see cref="RotateRange"/> 的区间切出来。</summary>
+    internal static byte[] RotateTail(byte[] window, bool hasSentinel)
+    {
+        var (offset, count) = RotateRange(window, hasSentinel);
+        return window[offset..(offset + count)];
     }
 
     private static void DebugWrite(Exception ex)

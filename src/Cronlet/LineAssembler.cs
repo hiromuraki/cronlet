@@ -1,26 +1,28 @@
-using System.Globalization;
 using System.Text;
 
 namespace HiroMuraki.Cronlet;
 
 /// <summary>
-/// 把字符流切成行，并让"单行"占用的内存有界：超过上限后继续丢弃到换行，
-/// 只保留前缀加截断标记。
+/// 把字符流切成行，并让"单行"占用的内存有界。
+/// 缓冲只保留到上限加一小段前瞻；截断规则统一交给 <see cref="Log.TruncateLine"/>，
+/// 这里不自己判断组合字符——那套分类会漏掉补充平面组合符和 ZWJ。
 /// 进程的 <c>BeginOutputReadLine</c> 会先缓存完整行，一条几百 MiB 的无换行输出
 /// 会把宿主的内存整个顶上去；这里在读取时就设上限。
 /// </summary>
 internal sealed class LineAssembler
 {
     private readonly StringBuilder _line = new();
-    private readonly bool _truncate;
+    private readonly int _capacity;
 
-    public LineAssembler(int maxChars, bool truncate = true)
+    /// <param name="maxBytes">单行最终保留的 UTF-8 字节上限，和 <see cref="Log.TruncateLine"/> 一致。</param>
+    /// <param name="lookaheadChars">上限之外额外保留的前瞻长度，让截断点仍能落在完整字形簇上。</param>
+    public LineAssembler(int maxBytes, int lookaheadChars = 4096)
     {
-        MaxChars = maxChars;
-        _truncate = truncate;
+        MaxBytes = maxBytes;
+        _capacity = maxBytes + lookaheadChars;
     }
 
-    public int MaxChars { get; }
+    public int MaxBytes { get; }
 
     /// <summary>喂入一块字符，返回其中已成形的行（可能 0 到多条）。</summary>
     public List<string> Feed(ReadOnlySpan<char> chunk)
@@ -51,51 +53,21 @@ internal sealed class LineAssembler
 
             _skipNextLf = false;
 
-            if (!_truncated && _line.Length < MaxChars)
-            {
-                _line.Append(c);
-                continue;
-            }
-
-            if (_truncate && !_truncated)
-            {
-                // 截断点若落在簇中间（当前字符是组合标记），把整个簇丢掉，
-                // 否则会留下半个字形：e 而没有重音
-                if (IsCombining(c) && _line.Length > 0)
-                {
-                    int i = _line.Length - 1;
-                    while (i >= 0 && IsCombining(_line[i])) i--;
-                    if (i >= 0) i--;
-                    _line.Length = Math.Max(i + 1, 0);
-                }
-
-                _truncated = true;
-            }
+            if (_line.Length < _capacity) _line.Append(c);
         }
 
         return lines;
     }
 
     /// <summary>流结束时取出残留内容；没有残留返回 null。</summary>
-    public string? Flush() => _line.Length == 0 && !_truncated ? null : TakeLine();
+    public string? Flush() => _line.Length == 0 ? null : TakeLine();
 
-    private static bool IsCombining(char c) =>
-        CharUnicodeInfo.GetUnicodeCategory(c) is
-            UnicodeCategory.NonSpacingMark or
-            UnicodeCategory.SpacingCombiningMark or
-            UnicodeCategory.EnclosingMark;
-
-    private bool _truncated;
     private bool _skipNextLf;
 
     private string TakeLine()
     {
-        string text = _truncated
-            ? string.Concat(_line.ToString(), Log.TruncatedSuffix)
-            : _line.ToString();
-
+        string text = Log.TruncateLine(_line.ToString(), MaxBytes);
         _line.Clear();
-        _truncated = false;
         return text;
     }
 }
