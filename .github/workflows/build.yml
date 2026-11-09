@@ -66,7 +66,7 @@ jobs:
 
     steps:
       - name: Download AOT artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cronlet-win-x64-aot
           path: aot
