@@ -80,13 +80,17 @@ jobs:
           # 重跑同一运行会得到相同的 run_number；已存在时校验指向后再复用，
           # 否则 gh release create 会对同标签报错，让整次工作流失败
           tag="aot-${{ github.run_number }}"
-          existing="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null || true)"
 
-          if [ -n "$existing" ]; then
+          # 用 release view 判断是否已存在：gh api 在 404 时会把错误 JSON 打到 stdout，
+          # 直接拿它当 "existing" 会误判成"标签已存在但指向不对"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            existing="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq .object.sha)"
+
             if [ "$existing" != "${GITHUB_SHA}" ]; then
               echo "::error::tag ${tag} points at ${existing}, expected ${GITHUB_SHA}"
               exit 1
             fi
+
             echo "release ${tag} already exists for ${GITHUB_SHA}; refreshing asset"
             gh release upload "$tag" aot/Cronlet.exe --clobber
             exit 0
