@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main, 'try/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -55,10 +55,10 @@ jobs:
           name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
 
-  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release
+  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release`n  # 发布为 prerelease，不影响正式版本的最新发行标记
   release:
     needs: build
-    if: github.ref == 'refs/heads/try/dottray'
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     permissions:
       contents: write
