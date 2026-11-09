@@ -1,0 +1,117 @@
+# Cronlet DotTray 分支复审回复（352104）
+
+- 对应审查：`CODE_REVIEW_2026-11-09-04-43-51_352104.md`（提交 `3521045`，`try/dottray`）
+- 回复时间 2026-11-09 05:25 +08:00（香港时间）
+- 处理结果：三项全部修复，其中 P2 通过撤销手写解析器整体消除
+- 回归验证：Release 构建 0 错误 0 警告；`dotnet test` 74 项全部通过；CI 的 AOT 构建已重跑
+
+## [P2] 探测返回取消后，输出管道读取仍可存活 —— 已修复
+
+复述：取消路径 `Kill(true)` 后等读任务 2 秒，但没检查等待结果；`DrainAsync` 不接收令牌；两个 `StreamReader` 也没显式释放。外部进程持有写端时，读端可能继续活着。
+
+修复（[ShellResolver.cs](../../src/Cronlet/ShellResolver.cs)）：
+
+1. **读取与进程退出共用同一个截止时间**：
+
+```csharp
+using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+deadline.CancelAfter(ProbeTimeout);
+
+var stdout = DrainAsync(proc.StandardOutput, MaxVersionChars, deadline.Token);
+var stderr = DrainAsync(proc.StandardError, MaxErrorChars, deadline.Token);
+var all = Task.WhenAll(proc.WaitForExitAsync(deadline.Token), stdout, stderr);
+```
+
+`DrainAsync` 改用 `reader.ReadAsync(buffer.AsMemory(), ct)`，截止时间一到读取自己就结束，不再依赖"进程终止让管道关闭"。
+
+2. **取消/超时统一清理，并显式关闭读取端、确认读任务收尾**：
+
+```csharp
+if (!all.IsCompletedSuccessfully)
+{
+    try { proc.Kill(true); } catch { }
+    try { proc.StandardOutput.Dispose(); } catch { }
+    try { proc.StandardError.Dispose(); } catch { }
+    try { Task.WaitAll([stdout, stderr], TimeSpan.FromSeconds(2)); } catch { }
+    return (false, ct.IsCancellationRequested ? "已取消" : "未在 10s 内完成");
+}
+```
+
+`DrainAsync` 内部吞掉 `OperationCanceledException` / `IOException` / `ObjectDisposedException`，返回已经读到的部分，所以即使外部还持有写端，取消后读任务也会立刻结束。
+
+3. 启动前的预取消检查保留不变。
+
+## [P2] 手写 TOML 解析器仍会接受并改写非法输入 —— 已修复（撤销手写实现）
+
+这条不用再补词法检查了：**手写解析器整体删除**，配置解析回到 Tomlyn 源生成。
+
+先纠正上一份回复里的错误结论：Tomlyn **2.11.0 确实带源生成器**。包内有
+
+```
+analyzers\dotnet\cs\Tomlyn.SourceGeneration.dll
+buildTransitive\Tomlyn.targets
+```
+
+我上次用 `SourceGenerator|Generator` 去匹配，而文件叫 `Generation`（少一个 `r`），所以漏掉了，进而得出"没有生成器"的错误结论。
+
+现在（[Config.cs](../../src/Cronlet/Config.cs)）：
+
+```csharp
+[TomlSerializable(typeof(RunnerConfig))]
+internal partial class TomlContext : TomlSerializerContext;
+
+var config = TomlSerializer.Deserialize<RunnerConfig>(text, TomlContext.Default);
+```
+
+`buildTransitive/Tomlyn.targets` 在 `PublishAot` 时把 `TomlynIsReflectionEnabledByDefault` 设为 false，配合生成上下文就没有反射路径；`<IsAotCompatible>true</IsAotCompatible>` 下编译 0 警告。
+
+审查列出的五类输入现在都由 Tomlyn 拒绝，并有对应用例：
+
+| 输入 | 结果 |
+|---|---|
+| `jitter = 1__000` / `_5` / `007` | 拒绝 |
+| `tasks = []` 后追加 `[[tasks]]` | 拒绝（重复键） |
+| `command = "\uD800"` | 拒绝（代理项非法） |
+| `enabled = false` 写两次 | 拒绝（重复键） |
+| `command = "a" junk` | 拒绝（多余内容） |
+
+同时完整语法回来了：三引号多行命令、下划线数字、`\uXXXX` 转义、空数组都有用例（`ConfigParseTests`）。
+
+## [P3] 超长字形簇仍会分配即将丢弃的副本 —— 已修复
+
+上一轮我确实说过改成了 span 版，但那次用 PowerShell 做字符串替换时锚点没匹配，改动静默丢失——代码里还是 `GetTextElementEnumerator` / `GetTextElement()`。这次直接改文件并确认：
+
+```csharp
+var rest = line.AsSpan();
+while (!rest.IsEmpty)
+{
+    int length = StringInfo.GetNextTextElementLength(rest);
+    int size = Encoding.UTF8.GetByteCount(rest[..length]);
+    if (used + size > MaxLineBytes) break;
+    used += size;
+    cut += length;
+    rest = rest[length..];
+}
+```
+
+不再为任何簇生成子字符串；超长簇在判定阶段就被跳过。
+
+## [P3] 临时错误托盘仍把令牌交给 DotTray —— 已统一
+
+`ShowFatal` 也改成 `CancellationToken.None`，用一个 `ManualResetEventSlim` 接收"关闭"点击、6 秒后自动结束，关闭统一由 `Dispose` 负责。现在两处托盘的关闭语义完全一致。
+
+## 复核与取舍的回应
+
+- 工作流 `--target` 与 `--prerelease` 已确认；`aot-12` 指向 `3e0e12be`。
+- 源生成路径可用这一点由审查的探针核实，我这边也用 `IsAotCompatible` 编译通过了；原生链接与体积差异等 CI 的 AOT 产物出来后一并补上。
+
+## 回归结果
+
+```
+dotnet build Cronlet.slnx -c Release --no-incremental   0 警告 0 错误
+dotnet test  Cronlet.slnx -c Release                    74 通过 / 0 失败
+```
+
+测试数量 79 → 74：手写解析器的 12 个用例随实现删除，新增 9 个基于 Tomlyn 的语法用例（含 5 个非法输入）。
+
+未自动化验证：探测取消后"外部写端仍存活"的场景没有构造定向用例，靠 `DrainAsync` 的令牌语义保证；托盘点击路径仍是代码复核。

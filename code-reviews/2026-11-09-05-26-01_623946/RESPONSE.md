@@ -1,0 +1,59 @@
+# Cronlet DotTray 分支复审回复（623946）
+
+- 对应审查：`CODE_REVIEW_2026-11-09-05-26-01_623946.md`（提交 `6239460`，`try/dottray`）
+- 回复时间 2026-11-09 05:45 +08:00（香港时间）
+- 处理结果：一项 P2 已修复；三项复核确认
+- 回归验证：Release 构建 0 错误 0 警告；`dotnet test` 74 项全部通过
+
+## [P2] 探测取消后仍可能报告成功并跳过管道清理 —— 已修复
+
+复述：子进程输出版本号后先退出、外部还持有 stdout 写端时，`WaitForExitAsync` 先成功；取消到达后 `DrainAsync` 把 `OperationCanceledException` **吞成正常返回**，两个读任务以成功状态结束，`Task.WhenAll` 于是显示成功，探测跳过清理分支并用旧版本号返回 `Ok=true`——而那个写端仍然可写。
+
+三处修改（[ShellResolver.cs](../../src/Cronlet/ShellResolver.cs)）：
+
+1. **取消不再被吞**：`DrainAsync` 只吞 `IOException` / `ObjectDisposedException`（读取端被关掉属于正常收尾），`OperationCanceledException` 向上传播，让"这次读取被取消"体现为任务状态。
+
+```csharp
+// OperationCanceledException 不吞：取消必须体现为任务状态，
+// 否则调用方会把"被取消的读取"当成正常结束
+```
+
+2. **两个信号一起看**：不再只用 `!all.IsCompletedSuccessfully` 判断。
+
+```csharp
+if (deadline.IsCancellationRequested || !all.IsCompletedSuccessfully)
+{
+    ...
+    return (false, ct.IsCancellationRequested ? "已取消" : "未在 10s 内完成");
+}
+```
+
+3. **释放覆盖所有退出路径**：两个 reader 的 `Dispose` 移到 `finally`，和 `Kill(true)` 一起执行，不再取决于聚合任务当时的状态。
+
+```csharp
+finally
+{
+    try { proc.Kill(true); } catch { }
+    try { proc.StandardOutput.Dispose(); } catch { }
+    try { proc.StandardError.Dispose(); } catch { }
+}
+```
+
+这样"读任务已完成、但期间发生过取消"的组合也会被判为失败，并且读端在返回前一定被关闭。
+
+## 已复核项
+
+| 项 | 状态 |
+|---|---|
+| TOML 恢复 Tomlyn 源生成上下文 | 确认。`[TomlSerializable]` + `TomlContext.Default`，语法用例覆盖非法数字、重复键、非法代理项，也覆盖多行命令、数字分隔符、转义 |
+| 日志截断走 span | 确认。`GetNextTextElementLength` 在 `ReadOnlySpan<char>` 上扫描，8,388,608 个组合附加符的簇分配 584 字节 |
+| 启动失败托盘关闭统一 | 确认。点击只 `done.Set()`，图标关闭由 `Dispose` 负责 |
+
+## 回归结果
+
+```
+dotnet build Cronlet.slnx -c Release --no-incremental   0 警告 0 错误
+dotnet test  Cronlet.slnx -c Release                    74 通过 / 0 失败
+```
+
+未自动化验证：审查构造的"外部持有写端"场景没有本地复现，修复依据是"取消必须体现为任务状态"这一条不变量；本轮也没有在本机跑 NativeAOT（缺 MSVC），CI 会跑。
