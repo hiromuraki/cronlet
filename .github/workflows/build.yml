@@ -3,6 +3,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -55,49 +56,45 @@ jobs:
           name: cronlet-win-x64-aot
           path: artifacts/publish/Cronlet/release_win-x64/
 
-  # 只有这个作业需要写权限：它不检出代码、不跑构建，只把已构建好的产物挂到 release
-  # 发布为 prerelease，不影响正式版本的最新发行标记
+  # 打 v* 标签才发正式 release：把已构建的两个产物挂到对应的 GitHub Release。
+  # 重跑同一标签时改为覆盖资产，避免 gh release create 因标签已存在而失败。
   release:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     permissions:
       contents: write
 
     steps:
+      - name: Download framework dependent artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: cronlet-win-x64
+          path: dist/fdd
+
       - name: Download AOT artifact
         uses: actions/download-artifact@v8
         with:
           name: cronlet-win-x64-aot
-          path: aot
+          path: dist/aot
 
-      - name: Release (NativeAOT)
+      - name: Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          # 重跑同一运行会得到相同的 run_number；已存在时校验指向后再复用，
-          # 否则 gh release create 会对同标签报错，让整次工作流失败
-          tag="aot-${{ github.run_number }}"
-
-          # 用 release view 判断是否已存在：gh api 在 404 时会把错误 JSON 打到 stdout，
-          # 直接拿它当 "existing" 会误判成"标签已存在但指向不对"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            existing="$(gh api "repos/${GH_REPO}/git/ref/tags/${tag}" --jq .object.sha)"
-
-            if [ "$existing" != "${GITHUB_SHA}" ]; then
-              echo "::error::tag ${tag} points at ${existing}, expected ${GITHUB_SHA}"
-              exit 1
-            fi
-
-            echo "release ${tag} already exists for ${GITHUB_SHA}; refreshing asset"
-            gh release upload "$tag" aot/Cronlet.exe --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "dist/fdd/Cronlet.exe#Cronlet $TAG (framework dependent)" \
+              "dist/aot/Cronlet.exe#Cronlet $TAG (NativeAOT)" \
+              --clobber
             exit 0
           fi
 
-          gh release create "$tag" aot/Cronlet.exe \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "AOT build ${{ github.run_number }}" \
-            --notes "NativeAOT build from $GITHUB_SHA"
+          gh release create "$TAG" \
+            "dist/fdd/Cronlet.exe#Cronlet $TAG (framework dependent)" \
+            "dist/aot/Cronlet.exe#Cronlet $TAG (NativeAOT)" \
+            --title "Cronlet $TAG" \
+            --generate-notes

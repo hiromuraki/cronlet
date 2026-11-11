@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Reflection;
 using DotTray;
 using DotTray.Items;
 
@@ -11,13 +13,22 @@ namespace HiroMuraki.Cronlet;
 /// </summary>
 internal sealed class TrayContext : IDisposable
 {
+    private const int UpcomingCount = 5;
+
     private readonly DefaultPopupMenuHandler _menu = new();
     private readonly NotifyIcon<DefaultPopupMenuHandler> _icon;
     private readonly string _configPath;
+    private readonly Func<IReadOnlyList<Scheduler.NextRun>> _upcoming;
+    private readonly List<ItemBase> _upcomingItems = [];
 
-    public TrayContext(string configPath, Action onExit, Func<Task<string?>> reload)
+    public TrayContext(
+        string configPath,
+        Action onExit,
+        Func<Task<string?>> reload,
+        Func<IReadOnlyList<Scheduler.NextRun>> upcoming)
     {
         _configPath = configPath;
+        _upcoming = upcoming;
 
         _menu.Items.Add(new MenuItem { Text = "打开配置文件", Clicked = _ => OpenConfig() });
         _menu.Items.Add(new MenuItem { Text = "打开脚本目录", Clicked = _ => OpenFolder(Paths.Scripts) });
@@ -43,7 +54,74 @@ internal sealed class TrayContext : IDisposable
             AppIcon.Release(handle);
         }
 
-        _icon.SetToolTip("Cronlet");
+        _icon.SetToolTip($"Cronlet {VersionText()}");
+        _icon.Interacted += OnInteracted;
+    }
+
+    private void OnInteracted(NotifyIconInteractedEventArgs e)
+    {
+        if (e.Type == IconInteractionType.ContextMenu)
+        {
+            RefreshUpcoming();
+        }
+    }
+
+    /// <summary>
+    /// 重建菜单顶部的待触发列表（队列里各任务的下一次）。DotTray 先触发 Interacted、
+    /// 再让 handler 构建菜单，所以这里改完 Items，本次弹出的菜单就是新内容。
+    /// </summary>
+    private void RefreshUpcoming()
+    {
+        foreach (var item in _upcomingItems)
+        {
+            _menu.Items.Remove(item);
+        }
+
+        _upcomingItems.Clear();
+
+        var runs = _upcoming().Take(UpcomingCount).ToList();
+        if (runs.Count == 0)
+        {
+            return;
+        }
+
+        int index = 0;
+        foreach (var run in runs)
+        {
+            var item = new MenuItem
+            {
+                Text = FormatUpcoming(run),
+                IsDisabled = true,
+            };
+            _upcomingItems.Add(item);
+            _menu.Items.Insert(index++, item);
+        }
+
+        _upcomingItems.Add(SeparatorItem.Instance);
+        _menu.Items.Insert(index, SeparatorItem.Instance);
+    }
+
+    private static string FormatUpcoming(Scheduler.NextRun run)
+    {
+        var local = run.When.ToLocalTime();
+        string when = local.Date == DateTime.Today
+            ? local.ToString("HH:mm:ss", CultureInfo.InvariantCulture)
+            : local.ToString("MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        return $"{when}  {run.Task}";
+    }
+
+    /// <summary>程序集版本：优先取 InformationalVersion，去掉构建工具追加的 +commit 后缀。</summary>
+    private static string VersionText()
+    {
+        var asm = typeof(TrayContext).Assembly;
+        string? informational = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrEmpty(informational))
+        {
+            int plus = informational.IndexOf('+');
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
+        return asm.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
 

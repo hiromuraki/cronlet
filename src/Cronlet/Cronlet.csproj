@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Cronlet</AssemblyName>
+    <Version>0.2.0</Version>
     <RootNamespace>HiroMuraki.Cronlet</RootNamespace>
     <ApplicationIcon>runner.ico</ApplicationIcon>
     <IsAotCompatible>true</IsAotCompatible>
