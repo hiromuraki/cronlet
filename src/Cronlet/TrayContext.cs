@@ -81,7 +81,6 @@ internal sealed class TrayContext : IDisposable
         _upcomingItems.Clear();
 
         var runs = _upcoming().Take(UpcomingCount).ToList();
-        Log.Event("tray-menu", ("upcoming", runs.Count));
         if (runs.Count == 0)
         {
             return;
