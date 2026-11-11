@@ -536,6 +536,45 @@ internal sealed class Scheduler
         return queued.OrderBy(x => x.When).Take(count).ToList();
     }
 
+    /// <summary>立即触发一次的结果：是否真的启动了，以及给用户看的说明。</summary>
+    internal readonly record struct RunNowResult(bool Started, string Message);
+
+    /// <summary>
+    /// 立即触发一个任务，不改动队列里的计划时间——到点仍会照常再跑一次。
+    /// 该任务正在运行时的行为由它的 overlap 策略决定。
+    /// </summary>
+    public RunNowResult RunNow(string name)
+    {
+        RunNowResult result;
+        lock (_gate)
+        {
+            if (_stopRequested)
+            {
+                result = new RunNowResult(false, "程序正在退出，未执行");
+            }
+            else if (_reloading)
+            {
+                result = new RunNowResult(false, "配置正在重载，未执行");
+            }
+            else
+            {
+                var task = _config.tasks.FirstOrDefault(t => t.name == name && t.enabled);
+                result = task is null
+                    ? new RunNowResult(false, $"任务 {name} 不存在或已禁用")
+                    : FireLocked(task) switch
+                    {
+                        null => new RunNowResult(true, $"已启动 {name}"),
+                        "kill" => new RunNowResult(true, $"已终止 {name} 的上一次运行并重新启动"),
+                        "queue" => new RunNowResult(false, $"{name} 还在运行，已排队等本次结束后再跑"),
+                        _ => new RunNowResult(false, $"{name} 还在运行，本次跳过"),
+                    };
+            }
+        }
+
+        Log.Event("run-now", ("task", name), ("started", result.Started));
+        return result;
+    }
+
     private async Task WaitOrWakeAsync(TimeSpan delay, Task wake)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(_ct);

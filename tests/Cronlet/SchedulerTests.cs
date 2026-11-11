@@ -131,6 +131,63 @@ public class SchedulerTests
         }
     }
 
+    [Fact]
+    public void RunNow_rejects_unknown_task()
+    {
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+
+        var result = scheduler.RunNow("missing");
+
+        Assert.False(result.Started);
+        Assert.Contains("missing", result.Message);
+    }
+
+    [Fact]
+    public void RunNow_rejects_disabled_task()
+    {
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(
+            new RunnerConfig { tasks = [FarTask("probe", enabled: false)] }, "pwsh", cts.Token);
+
+        var result = scheduler.RunNow("probe");
+
+        Assert.False(result.Started);
+        Assert.Contains("probe", result.Message);
+    }
+
+    [Fact]
+    public void RunNow_starts_the_task()
+    {
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+        try
+        {
+            var result = scheduler.RunNow("probe");
+
+            Assert.True(result.Started, result.Message);
+            Assert.Contains("probe", result.Message);
+        }
+        finally
+        {
+            cts.Cancel();
+            scheduler.Stop();
+        }
+    }
+
+    [Fact]
+    public void RunNow_rejects_after_stop()
+    {
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+        scheduler.Stop();
+
+        var result = scheduler.RunNow("probe");
+
+        Assert.False(result.Started);
+        Assert.Contains("退出", result.Message);
+    }
+
     private static TaskConfig FarTask(string name, bool enabled = true) => new()
     {
         name = name,

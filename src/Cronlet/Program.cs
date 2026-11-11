@@ -95,7 +95,8 @@ internal static class Program
                             return "配置错误: " + ex.Message;
                         }
                     },
-                    () => scheduler.GetUpcoming(5));
+                    () => scheduler.GetUpcoming(5),
+                    scheduler.RunNow);
             }
 
             // 主线程只负责等待退出信号；调度与托盘各自跑在后台线程上

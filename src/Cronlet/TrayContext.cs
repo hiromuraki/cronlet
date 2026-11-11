@@ -19,16 +19,19 @@ internal sealed class TrayContext : IDisposable
     private readonly NotifyIcon<DefaultPopupMenuHandler> _icon;
     private readonly string _configPath;
     private readonly Func<IReadOnlyList<Scheduler.NextRun>> _upcoming;
+    private readonly Func<string, Scheduler.RunNowResult> _runNow;
     private readonly List<ItemBase> _upcomingItems = [];
 
     public TrayContext(
         string configPath,
         Action onExit,
         Func<Task<string?>> reload,
-        Func<IReadOnlyList<Scheduler.NextRun>> upcoming)
+        Func<IReadOnlyList<Scheduler.NextRun>> upcoming,
+        Func<string, Scheduler.RunNowResult> runNow)
     {
         _configPath = configPath;
         _upcoming = upcoming;
+        _runNow = runNow;
 
         _menu.Items.Add(new MenuItem { Text = "打开配置文件", Clicked = _ => OpenConfig() });
         _menu.Items.Add(new MenuItem { Text = "打开脚本目录", Clicked = _ => OpenFolder(Paths.Scripts) });
@@ -91,15 +94,30 @@ internal sealed class TrayContext : IDisposable
         {
             var item = new MenuItem
             {
-                Text = FormatUpcoming(run),
-                IsDisabled = true,
+                Text = "▶ " + FormatUpcoming(run),
             };
+            item.Clicked = _ => RunNow(run.Task);
             _upcomingItems.Add(item);
             _menu.Items.Insert(index++, item);
         }
 
         _upcomingItems.Add(SeparatorItem.Instance);
         _menu.Items.Insert(index, SeparatorItem.Instance);
+    }
+
+    /// <summary>
+    /// 点条目立即跑一次。不改计划：到点仍然会按队列再跑一次。
+    /// 菜单关掉了，结果只能用气泡告诉用户。
+    /// </summary>
+    private void RunNow(string task)
+    {
+        var result = _runNow(task);
+        _icon.ShowBalloon(new BalloonNotification
+        {
+            Title = "Cronlet",
+            Message = result.Message,
+            Icon = result.Started ? BalloonNotificationIcon.Info : BalloonNotificationIcon.Warning,
+        });
     }
 
     private static string FormatUpcoming(Scheduler.NextRun run)
