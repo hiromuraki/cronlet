@@ -85,20 +85,20 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          # 两个包都叫 Cronlet.exe，Release 里不允许同名资产，先按版本+类型重命名
-          cp dist/fdd/Cronlet.exe "dist/cronlet-$TAG-win-x64-fdd.exe"
-          cp dist/aot/Cronlet.exe "dist/cronlet-$TAG-win-x64-aot.exe"
+          # 两个包都叫 Cronlet.exe，Release 里不允许同名资产，按平台+类型重命名
+          cp dist/fdd/Cronlet.exe "dist/cronlet-windows-amd64.exe"
+          cp dist/aot/Cronlet.exe "dist/cronlet-windows-amd64-aot.exe"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" \
-              "dist/cronlet-$TAG-win-x64-fdd.exe#Cronlet $TAG (framework dependent)" \
-              "dist/cronlet-$TAG-win-x64-aot.exe#Cronlet $TAG (NativeAOT)" \
+              "dist/cronlet-windows-amd64.exe#Cronlet $TAG (framework dependent)" \
+              "dist/cronlet-windows-amd64-aot.exe#Cronlet $TAG (NativeAOT)" \
               --clobber
             exit 0
           fi
 
           gh release create "$TAG" \
-            "dist/cronlet-$TAG-win-x64-fdd.exe#Cronlet $TAG (framework dependent)" \
-            "dist/cronlet-$TAG-win-x64-aot.exe#Cronlet $TAG (NativeAOT)" \
+            "dist/cronlet-windows-amd64.exe#Cronlet $TAG (framework dependent)" \
+            "dist/cronlet-windows-amd64-aot.exe#Cronlet $TAG (NativeAOT)" \
             --title "Cronlet $TAG" \
             --generate-notes

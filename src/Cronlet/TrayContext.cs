@@ -60,7 +60,8 @@ internal sealed class TrayContext : IDisposable
 
     private void OnInteracted(NotifyIconInteractedEventArgs e)
     {
-        if (e.Type == IconInteractionType.ContextMenu)
+        // DotTray 对左键单击发 Select、右键发 ContextMenu、键盘发 KeySelect，三者都会弹菜单
+        if (e.Type is IconInteractionType.ContextMenu or IconInteractionType.Select or IconInteractionType.KeySelect)
         {
             RefreshUpcoming();
         }
@@ -80,6 +81,7 @@ internal sealed class TrayContext : IDisposable
         _upcomingItems.Clear();
 
         var runs = _upcoming().Take(UpcomingCount).ToList();
+        Log.Event("tray-menu", ("upcoming", runs.Count));
         if (runs.Count == 0)
         {
             return;
