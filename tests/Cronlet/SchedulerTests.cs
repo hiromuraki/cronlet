@@ -200,6 +200,29 @@ public class SchedulerTests
     }
 
     [Fact]
+    public void RunNow_reports_a_failed_start()
+    {
+        using var cts = new CancellationTokenSource();
+
+        // 配置校验只看 pwsh 的名字，进程能不能起来要到 RunNow 才知道
+        string missing = Path.Combine(
+            Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"), "pwsh.exe");
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, missing, cts.Token);
+        try
+        {
+            var result = scheduler.RunNow("probe");
+
+            Assert.False(result.Started, result.Message);
+            Assert.Contains("失败", result.Message);
+        }
+        finally
+        {
+            cts.Cancel();
+            scheduler.Stop();
+        }
+    }
+
+    [Fact]
     public void RunNow_rejects_after_stop()
     {
         using var cts = new CancellationTokenSource();

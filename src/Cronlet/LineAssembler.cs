@@ -4,8 +4,10 @@ namespace HiroMuraki.Cronlet;
 
 /// <summary>
 /// 把字符流切成行，并让"单行"占用的内存有界。
-/// 缓冲只保留到上限加一小段前瞻；截断规则统一交给 <see cref="Log.TruncateLine"/>，
-/// 这里不自己判断组合字符——那套分类会漏掉补充平面组合符和 ZWJ。
+/// 缓冲只保留到上限加一小段前瞻，多出的字符直接丢弃：下游按字节截断时，截断点
+/// 一定落在这段缓冲里，前瞻则让它仍能落在完整字形簇上。
+/// 截断和截断标记只有 <see cref="Log.TruncateLine"/> 一个所有者——这里不再截断，
+/// 否则同一行会被截两次、再分配一份相同的字符串。
 /// 进程的 <c>BeginOutputReadLine</c> 会先缓存完整行，一条几百 MiB 的无换行输出
 /// 会把宿主的内存整个顶上去；这里在读取时就设上限。
 /// </summary>
@@ -14,15 +16,12 @@ internal sealed class LineAssembler
     private readonly StringBuilder _line = new();
     private readonly int _capacity;
 
-    /// <param name="maxBytes">单行最终保留的 UTF-8 字节上限，和 <see cref="Log.TruncateLine"/> 一致。</param>
+    /// <param name="maxBytes">下游按 UTF-8 字节截断时使用的上限，和 <see cref="Log.MaxLineBytes"/> 一致。</param>
     /// <param name="lookaheadChars">上限之外额外保留的前瞻长度，让截断点仍能落在完整字形簇上。</param>
     public LineAssembler(int maxBytes, int lookaheadChars = 4096)
     {
-        MaxBytes = maxBytes;
         _capacity = maxBytes + lookaheadChars;
     }
-
-    public int MaxBytes { get; }
 
     /// <summary>喂入一块字符，返回其中已成形的行（可能 0 到多条）。</summary>
     public List<string> Feed(ReadOnlySpan<char> chunk)
@@ -66,7 +65,7 @@ internal sealed class LineAssembler
 
     private string TakeLine()
     {
-        string text = Log.TruncateLine(_line.ToString(), MaxBytes);
+        string text = _line.ToString();
         _line.Clear();
         return text;
     }

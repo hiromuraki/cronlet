@@ -38,6 +38,7 @@ internal static class Log
         }
     }
 
+    /// <summary>写一行任务输出。<see cref="TruncateLine"/> 是全程序唯一的截断点。</summary>
     public static void TaskOutput(string task, string stream, string line)
     {
         string text = TruncateLine(line);
@@ -255,13 +256,6 @@ internal static class Log
         if (last < offset) return (0, 0);
 
         return (offset, last + 1 - offset);
-    }
-
-    /// <summary>测试用的数组形式，等价于把 <see cref="RotateRange"/> 的区间切出来。</summary>
-    internal static byte[] RotateTail(byte[] window, bool hasSentinel)
-    {
-        var (offset, count) = RotateRange(window, hasSentinel);
-        return window[offset..(offset + count)];
     }
 
     private static void DebugWrite(Exception ex)

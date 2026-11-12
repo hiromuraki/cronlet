@@ -5,32 +5,38 @@ namespace HiroMuraki.Cronlet.Tests;
 
 public class LogRotationTests
 {
-    private static string Text(byte[] bytes) => Encoding.UTF8.GetString(bytes);
     private static byte[] Bytes(string s) => Encoding.UTF8.GetBytes(s);
+
+    /// <summary>把 <see cref="Log.RotateRange"/> 返回的区间切出来，方便断言内容。</summary>
+    private static string Tail(byte[] window, bool hasSentinel)
+    {
+        var (offset, count) = Log.RotateRange(window, hasSentinel);
+        return Encoding.UTF8.GetString(window, offset, count);
+    }
 
     [Fact]
     public void Keeps_only_complete_records()
-        => Assert.Equal("full1\nfull2\n", Text(Log.RotateTail(Bytes("tail-of-big-line\nfull1\nfull2\n"), hasSentinel: true)));
+        => Assert.Equal("full1\nfull2\n", Tail(Bytes("tail-of-big-line\nfull1\nfull2\n"), hasSentinel: true));
 
     [Fact]
     public void Drops_trailing_partial_record()
-        => Assert.Equal("full1\n", Text(Log.RotateTail(Bytes("cut\nfull1\nhal"), hasSentinel: true)));
+        => Assert.Equal("full1\n", Tail(Bytes("cut\nfull1\nhal"), hasSentinel: true));
 
     [Fact]
     public void Record_longer_than_window_yields_nothing()
-        => Assert.Empty(Log.RotateTail(Bytes(new string('x', 64) + "\n"), hasSentinel: true));
+        => Assert.Empty(Tail(Bytes(new string('x', 64) + "\n"), hasSentinel: true));
 
     [Fact]
     public void Window_without_newline_yields_nothing()
-        => Assert.Empty(Log.RotateTail(Bytes("no newline at all"), hasSentinel: true));
+        => Assert.Empty(Tail(Bytes("no newline at all"), hasSentinel: true));
 
     [Fact]
     public void Window_starting_on_a_record_boundary_keeps_the_first_record()
-        => Assert.Equal("full1\nfull2\n", Text(Log.RotateTail(Bytes("\nfull1\nfull2\n"), hasSentinel: true)));
+        => Assert.Equal("full1\nfull2\n", Tail(Bytes("\nfull1\nfull2\n"), hasSentinel: true));
 
     [Fact]
     public void Window_from_file_start_keeps_every_complete_record()
-        => Assert.Equal("full1\nfull2\n", Text(Log.RotateTail(Bytes("full1\nfull2\n"), hasSentinel: false)));
+        => Assert.Equal("full1\nfull2\n", Tail(Bytes("full1\nfull2\n"), hasSentinel: false));
 
     [Fact]
     public void Short_line_is_not_touched()

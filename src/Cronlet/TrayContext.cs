@@ -61,8 +61,8 @@ internal sealed class TrayContext : IDisposable
 
     private void OnInteracted(NotifyIconInteractedEventArgs e)
     {
-        // DotTray 对左键单击发 Select、右键发 ContextMenu、键盘发 KeySelect，三者都会弹菜单
-        if (e.Type is IconInteractionType.ContextMenu or IconInteractionType.Select or IconInteractionType.KeySelect)
+        // DotTray 3.0.0 只有左键 Select 和右键 ContextMenu 会弹菜单，KeySelect 不弹
+        if (e.Type is IconInteractionType.ContextMenu or IconInteractionType.Select)
         {
             RefreshUpcoming();
         }

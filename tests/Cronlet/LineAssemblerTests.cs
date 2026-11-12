@@ -49,22 +49,21 @@ public class LineAssemblerTests
     }
 
     [Fact]
-    public void Truncates_overlong_line_and_marks_it()
+    public void Truncation_happens_once_in_the_log_layer()
     {
         var assembler = new LineAssembler(8);
 
-        var lines = FeedAll(assembler, new string('a', 20) + "\n");
+        string line = Assert.Single(FeedAll(assembler, new string('a', 20) + "\n"));
 
-        string line = Assert.Single(lines);
-        Assert.StartsWith("aaaaaaaa", line, StringComparison.Ordinal);
-        Assert.EndsWith(Log.TruncatedSuffix, line, StringComparison.Ordinal);
-        Assert.Equal(8 + Log.TruncatedSuffix.Length, line.Length);
+        // 组装器原样返回有界原文，不加标记；标记只由 Log 加一次
+        Assert.Equal(new string('a', 20), line);
+        Assert.Equal(new string('a', 8) + Log.TruncatedSuffix, Log.TruncateLine(line, 8));
     }
 
     [Fact]
     public void Overflow_does_not_grow_memory_but_still_ends_the_line()
     {
-        var assembler = new LineAssembler(4);
+        var assembler = new LineAssembler(4, lookaheadChars: 0);
         var lines = new List<string>();
 
         // 分 64 块喂 64 KiB，确认只保留 4 个字符
@@ -75,8 +74,7 @@ public class LineAssemblerTests
 
         lines.AddRange(assembler.Feed("\n".AsSpan()));
 
-        string line = Assert.Single(lines);
-        Assert.Equal(4 + Log.TruncatedSuffix.Length, line.Length);
+        Assert.Equal(new string('x', 4), Assert.Single(lines));
     }
 
     [Fact]
@@ -104,7 +102,7 @@ public class LineAssemblerTests
 
         // 8191 个 a 之后是 e + 组合重音：整个簇应被丢弃，而不是留下半个 e
         string line = new string('a', 8191) + "e\u0301z";
-        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+        string result = Log.TruncateLine(Assert.Single(FeedAll(assembler, line + "\n")));
 
         Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
     }
@@ -113,8 +111,9 @@ public class LineAssemblerTests
     public void Truncation_keeps_full_ascii_prefix()
     {
         var assembler = new LineAssembler(4);
+        string line = Assert.Single(FeedAll(assembler, "abcdef\n"));
 
-        Assert.Equal("abcd" + Log.TruncatedSuffix, Assert.Single(FeedAll(assembler, "abcdef\n")));
+        Assert.Equal("abcd" + Log.TruncatedSuffix, Log.TruncateLine(line, 4));
     }
     [Fact]
     public void Truncation_drops_a_supplementary_plane_combining_cluster()
@@ -123,7 +122,7 @@ public class LineAssemblerTests
 
         // U+1D165 是补充平面的组合符号（代理对），旧实现只按单个码元分类，会漏掉它
         string line = new string('a', 8191) + "e\U0001D165z";
-        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+        string result = Log.TruncateLine(Assert.Single(FeedAll(assembler, line + "\n")));
 
         Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
     }
@@ -134,7 +133,7 @@ public class LineAssemblerTests
         var assembler = new LineAssembler(8192);
 
         string line = new string('a', 8191) + "e\u200Dz";
-        string result = Assert.Single(FeedAll(assembler, line + "\n"));
+        string result = Log.TruncateLine(Assert.Single(FeedAll(assembler, line + "\n")));
 
         Assert.Equal(new string('a', 8191) + Log.TruncatedSuffix, result);
     }

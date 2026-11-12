@@ -216,7 +216,7 @@ internal sealed class Scheduler
                    _queue.TryPeek(out var task, out var due) && due <= DateTime.UtcNow)
             {
                 _queue.Dequeue();
-                string? policy = FireLocked(task);
+                string? policy = FireLocked(task, out _);
                 if (policy is not null) overlaps.Add((task.name, policy));
                 TryEnqueueLocked(task);
             }
@@ -231,9 +231,14 @@ internal sealed class Scheduler
     /// <summary>
     /// 派发一个任务。注册运行名额、决定 overlap 策略都在锁内完成；
     /// 返回非 null 表示本次命中了 overlap 策略（kill 仍会启动新进程）。
+    /// <paramref name="startup"/> 只在真正尝试启动进程时非 null：它在
+    /// <c>Process.Start()</c> 返回或抛异常后完成，成功为 null，失败为异常。
+    /// 启动发生在 <see cref="ExecuteAsync"/> 里，所以调用方要等这个任务才能知道结果。
     /// </summary>
-    private string? FireLocked(TaskConfig task)
+    private string? FireLocked(TaskConfig task, out Task<Exception?>? startup)
     {
+        startup = null;
+
         // 停止之后不再登记新的运行名额：停止路径只负责终止已在跑的进程，
         // 不能因为一次补跑又拉起新的子进程。
         if (_stopRequested) return null;
@@ -263,11 +268,13 @@ internal sealed class Scheduler
         _running++;
 
         int runId = st.RunId;
-        _ = Task.Run(() => ExecuteAsync(task, st, runId));
+        var started = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        startup = started.Task;
+        _ = Task.Run(() => ExecuteAsync(task, st, runId, started));
         return policy;
     }
 
-    private async Task ExecuteAsync(TaskConfig task, TaskState st, int runId)
+    private async Task ExecuteAsync(TaskConfig task, TaskState st, int runId, TaskCompletionSource<Exception?> startup)
     {
         int exitCode = -1;
         bool timedOut = false;
@@ -301,7 +308,13 @@ internal sealed class Scheduler
                     proc.Start();
                 }
             }
-            if (!started) return;
+            if (!started)
+            {
+                startup.TrySetResult(new Exception("已被停止或被新的运行替换"));
+                return;
+            }
+
+            startup.TrySetResult(null);
 
             // 进程加入本次运行的 Job；失败只记一次，避免每个任务都刷一行
             if (job is not null && !job.TryAssign(proc, out string? assignError) &&
@@ -351,6 +364,8 @@ internal sealed class Scheduler
         }
         catch (Exception ex)
         {
+            // 启动失败要能回到 RunNow，否则托盘会把"进程起不来"报成已启动
+            startup.TrySetResult(ex);
             Log.Event("task-error", ("task", task.name), ("message", ex.Message));
         }
         finally
@@ -436,7 +451,7 @@ internal sealed class Scheduler
                 else if (_config.tasks.Contains(task))
                 {
                     // 只认原来的任务实例；重载后的同名任务不能在这里被提前触发
-                    rerunPolicy = FireLocked(task);
+                    rerunPolicy = FireLocked(task, out _);
                     rerunFired = true;
                 }
             }
@@ -457,7 +472,7 @@ internal sealed class Scheduler
         {
             if (!_config.tasks.Contains(task)) continue;
 
-            string? policy = FireLocked(task);
+            string? policy = FireLocked(task, out _);
             if (policy is not null) Log.Event("overlap", ("task", task.name), ("policy", policy));
             Log.Event("rerun", ("task", task.name));
         }
@@ -540,6 +555,9 @@ internal sealed class Scheduler
     /// <summary>立即触发一次的结果：是否真的启动了，以及给用户看的说明。</summary>
     internal readonly record struct RunNowResult(bool Started, string Message);
 
+    /// <summary>等待进程启动结果的上限；超时说明线程池忙，按已触发处理。</summary>
+    private static readonly TimeSpan StartupWait = TimeSpan.FromSeconds(1);
+
     /// <summary>
     /// 立即触发一个任务，不改动队列里的计划时间——到点仍会照常再跑一次。
     /// 该任务正在运行时的行为由它的 overlap 策略决定。
@@ -547,6 +565,8 @@ internal sealed class Scheduler
     public RunNowResult RunNow(string name)
     {
         RunNowResult result;
+        Task<Exception?>? startup = null;
+
         lock (_gate)
         {
             if (_stopRequested)
@@ -560,15 +580,32 @@ internal sealed class Scheduler
             else
             {
                 var task = _config.tasks.FirstOrDefault(t => t.name == name && t.enabled);
-                result = task is null
-                    ? new RunNowResult(false, $"任务 {name} 不存在或已禁用")
-                    : FireLocked(task) switch
+
+                if (task is null)
+                {
+                    result = new RunNowResult(false, $"任务 {name} 不存在或已禁用");
+                }
+                else
+                {
+                    result = FireLocked(task, out startup) switch
                     {
                         null => new RunNowResult(true, $"已启动 {name}"),
                         "kill" => new RunNowResult(true, $"已终止 {name} 的上一次运行并重新启动"),
                         "queue" => new RunNowResult(false, $"{name} 还在运行，已排队等本次结束后再跑"),
                         _ => new RunNowResult(false, $"{name} 还在运行，本次跳过"),
                     };
+                }
+            }
+        }
+
+        // 启动在 ExecuteAsync 里完成：等它有界时间，否则 pwsh 起不来时仍会报"已启动"。
+        // 在锁外等，ExecuteAsync 拿到 _gate 才能完成启动。
+        if (startup is not null && startup.Wait(StartupWait))
+        {
+            var error = startup.Result;
+            if (error is not null)
+            {
+                result = new RunNowResult(false, $"启动 {name} 失败：{error.Message}");
             }
         }
 
