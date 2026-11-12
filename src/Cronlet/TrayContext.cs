@@ -104,6 +104,33 @@ internal sealed class TrayContext : IDisposable
     }
 
     /// <summary>
+    /// 任务退出码变化时由调度器调用。可能在任意线程触发：DotTray 的 ShowBalloon
+    /// 只是写一个字段再 PostMessage 给托盘窗口。
+    /// </summary>
+    internal void ShowTaskNotification(Scheduler.Notification notification)
+    {
+        try
+        {
+            _icon.ShowBalloon(new BalloonNotification
+            {
+                Title = "Cronlet",
+                Message = FormatNotification(notification),
+                Icon = notification.Exit == 0 ? BalloonNotificationIcon.Info : BalloonNotificationIcon.Warning,
+            });
+        }
+        catch (Exception ex)
+        {
+            // 托盘窗口已销毁等情况：通知失败不影响调度
+            Log.Event("notify-failed", ("task", notification.Task), ("message", ex.Message));
+        }
+    }
+
+    private static string FormatNotification(Scheduler.Notification notification) =>
+        notification.TimedOut
+            ? $"{notification.Task} 超时（exit={notification.Exit}）"
+            : $"{notification.Task} exit={notification.Exit}";
+
+    /// <summary>
     /// 点条目立即跑一次。不改计划：到点仍然会按队列再跑一次。
     /// 菜单关掉了，结果只能用气泡告诉用户。
     /// </summary>

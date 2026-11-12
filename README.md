@@ -28,14 +28,25 @@ cwd = ""
 | `timeout` | 秒，0 表示不限制。计时覆盖"进程退出 + 输出读取"的联合等待：启动进程先退出、后代仍占着输出管道时同样算超时。超时会终止整个进程组（含已脱离父进程的后代）；命令启动瞬间派生的后代可能不在其中 |
 | `overlap` | 上次未结束时的策略：`skip`（默认）/ `kill` / `queue` |
 | `cwd` | 工作目录，空则用 exe 目录 |
+| `notify_if` | 可选。哪些退出码要弹通知；非空时只认这些。不写则用全局值 |
+| `notify_if_not` | 可选。哪些退出码不弹通知，优先于 `notify_if`。不写则用全局值 |
 
 `command` 是唯一入口：脚本写 `./scripts/xxx.ps1`，临时命令直接写命令本身。
 
-`pwsh` 和 `upcoming` 是全局配置项（与 `[[tasks]]` 同级）。`pwsh` 指定 PowerShell 可执行文件；不写则按 `pwsh` 在 PATH 里找，有启用任务却找不到时启动或重载会直接报错。`upcoming` 控制托盘菜单顶部最多列出多少个待触发任务，默认 10，必须大于 0：
+`pwsh`、`upcoming`、`notify_if`、`notify_if_not` 是全局配置项（与 `[[tasks]]` 同级）：
+
+- `pwsh` 指定 PowerShell 可执行文件；不写则按 `pwsh` 在 PATH 里找，有启用任务却找不到时启动或重载会直接报错。
+- `upcoming` 控制托盘菜单顶部最多列出多少个待触发任务，默认 10，必须大于 0。
+- `notify_if` / `notify_if_not` 决定任务结束时哪些退出码弹托盘通知：先看 `notify_if_not`（命中就不弹），再看 `notify_if`（非空时只认它里面的），都不受限就弹。默认 `notify_if = []`、`notify_if_not = [0]`，即非 0 退出才提醒；两者都能在单个任务里覆盖。超时按 `exit = -1` 参与判定。
+
+只有退出码与上一次不同才真的弹，所以连续同样的失败只提醒一次；中途成功一次、再次失败会重新提醒。
 
 ```toml
 pwsh = "S:/tools/pwsh/pwsh.exe"
 upcoming = 10
+
+notify_if = []
+notify_if_not = [0]
 ```
 
 **默认工作目录是 `Cronlet.exe` 所在目录**；`cwd` 非空时覆盖它。命令里的相对路径都相对这个目录解析，所以 `./scripts/login.ps1` 和你在 exe 目录下手敲的命令等价。

@@ -97,6 +97,8 @@ internal static class Program
                     },
                     scheduler.GetUpcoming,
                     scheduler.RunNow);
+
+                scheduler.NotificationSink = tray.ShowTaskNotification;
             }
 
             // 主线程只负责等待退出信号；调度与托盘各自跑在后台线程上

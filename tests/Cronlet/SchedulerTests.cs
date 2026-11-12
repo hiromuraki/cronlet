@@ -200,6 +200,98 @@ public class SchedulerTests
     }
 
     [Fact]
+    public void ShouldNotify_defaults_to_non_zero_exit_codes()
+    {
+        var config = new RunnerConfig();
+        var task = FarTask("probe");
+
+        Assert.False(Scheduler.ShouldNotify(task, config, null, 0));
+        Assert.True(Scheduler.ShouldNotify(task, config, null, 1));
+        Assert.True(Scheduler.ShouldNotify(task, config, null, -1));
+    }
+
+    [Fact]
+    public void ShouldNotify_skips_a_repeated_exit_code()
+    {
+        var config = new RunnerConfig();
+        var task = FarTask("probe");
+
+        Assert.False(Scheduler.ShouldNotify(task, config, 1, 1));
+        Assert.True(Scheduler.ShouldNotify(task, config, 0, 1));
+        Assert.True(Scheduler.ShouldNotify(task, config, 2, 1));
+    }
+
+    [Fact]
+    public void ShouldNotify_treats_notify_if_as_a_whitelist()
+    {
+        var config = new RunnerConfig { notify_if = [1, 2] };
+        var task = FarTask("probe");
+
+        Assert.True(Scheduler.ShouldNotify(task, config, null, 1));
+        Assert.False(Scheduler.ShouldNotify(task, config, null, 3));
+        Assert.False(Scheduler.ShouldNotify(task, config, null, 0));
+    }
+
+    [Fact]
+    public void ShouldNotify_lets_notify_if_not_win()
+    {
+        var config = new RunnerConfig { notify_if = [1], notify_if_not = [1] };
+
+        Assert.False(Scheduler.ShouldNotify(FarTask("probe"), config, null, 1));
+    }
+
+    [Fact]
+    public void Task_level_lists_override_the_top_level_ones()
+    {
+        var config = new RunnerConfig { notify_if_not = [0] };
+        var task = FarTask("probe");
+        task.notify_if_not = [];
+
+        Assert.True(Scheduler.ShouldNotify(task, config, null, 0));
+    }
+
+    [Fact]
+    public void Task_level_notify_if_narrows_the_result()
+    {
+        var config = new RunnerConfig();
+        var task = FarTask("probe");
+        task.notify_if = [5];
+
+        Assert.True(Scheduler.ShouldNotify(task, config, null, 5));
+        Assert.False(Scheduler.ShouldNotify(task, config, null, 1));
+    }
+
+    [Fact]
+    public void A_failing_run_raises_a_notification()
+    {
+        var task = FarTask("probe");
+        task.command = "exit 3";
+        var config = new RunnerConfig { tasks = [task] };
+
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(config, "pwsh", cts.Token);
+        using var fired = new SemaphoreSlim(0);
+        Scheduler.Notification? seen = null;
+        scheduler.NotificationSink = n => { seen = n; fired.Release(); };
+
+        try
+        {
+            Assert.True(scheduler.RunNow("probe").Started);
+            Assert.True(
+                fired.Wait(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken),
+                "任务以非 0 退出，应当弹一次通知");
+        }
+        finally
+        {
+            cts.Cancel();
+            scheduler.Stop();
+        }
+
+        Assert.Equal(3, seen!.Value.Exit);
+        Assert.False(seen.Value.TimedOut);
+    }
+
+    [Fact]
     public void RunNow_reports_a_failed_start()
     {
         using var cts = new CancellationTokenSource();

@@ -44,6 +44,33 @@ public class ConfigParseTests
         => Assert.Equal(10, ConfigLoader.Parse("tasks = []").upcoming);
 
     [Fact]
+    public void Notify_lists_default_to_non_zero_exit_codes()
+    {
+        var config = ConfigLoader.Parse("tasks = []");
+
+        Assert.Empty(config.notify_if);
+        Assert.Equal([0], config.notify_if_not);
+    }
+
+    [Fact]
+    public void Notify_lists_are_read_at_both_levels()
+    {
+        var config = ConfigLoader.Parse("""
+            notify_if = [1, 2]
+            notify_if_not = []
+
+            [[tasks]]
+            name = "probe"
+            notify_if = [7]
+            """);
+
+        Assert.Equal([1, 2], config.notify_if);
+        Assert.Empty(config.notify_if_not);
+        Assert.Equal([7], Assert.Single(config.tasks).notify_if);
+        Assert.Null(Assert.Single(config.tasks).notify_if_not);
+    }
+
+    [Fact]
     public void Top_level_pwsh_is_read()
         => Assert.Equal("C:/tools/pwsh.exe", ConfigLoader.Parse("pwsh = \"C:/tools/pwsh.exe\"").pwsh);
 

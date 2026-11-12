@@ -19,6 +19,12 @@ internal sealed class RunnerConfig
     /// <summary>托盘菜单顶部最多列出多少个待触发任务。</summary>
     public int upcoming { get; set; } = 10;
 
+    /// <summary>哪些退出码要弹通知；空表示不按退出码挑选。</summary>
+    public List<int> notify_if { get; set; } = new();
+
+    /// <summary>哪些退出码不弹通知；优先于 <see cref="notify_if"/>。</summary>
+    public List<int> notify_if_not { get; set; } = new() { 0 };
+
     public List<TaskConfig> tasks { get; set; } = new();
 
     /// <summary>收集未识别的顶层键，用来把拼写错误暴露成配置错误。</summary>
@@ -39,6 +45,12 @@ internal sealed class TaskConfig
     public int timeout { get; set; }
     public string overlap { get; set; } = "skip";
     public string? cwd { get; set; }
+
+    /// <summary>覆盖顶层的 <see cref="RunnerConfig.notify_if"/>；null 表示沿用顶层。</summary>
+    public List<int>? notify_if { get; set; }
+
+    /// <summary>覆盖顶层的 <see cref="RunnerConfig.notify_if_not"/>；null 表示沿用顶层。</summary>
+    public List<int>? notify_if_not { get; set; }
 
     /// <summary>收集未识别的任务键，例如把 enabled 写成 enabeld。</summary>
     [TomlExtensionData]
@@ -72,6 +84,14 @@ internal static class ConfigLoader
 
 # 可选：托盘菜单顶部最多列出多少个待触发任务（默认 10）
 # upcoming = 10
+
+# 可选：哪些退出码要弹通知。两个列表都按"退出码"筛选，notify_if_not 优先；
+# notify_if 非空时只认它里面的退出码，否则其余退出码都算要弹。
+# 只有退出码与上一次不同才真的弹——连续同样的失败只提醒一次。
+# 例如只对 1、2 弹：notify_if = [1, 2]
+# notify_if = []
+# notify_if_not = [0]
+
 
 [[tasks]]
 name = "example"

@@ -34,6 +34,12 @@ internal sealed class Scheduler
     /// <summary>一次计划触发：任务名与 UTC 时间。</summary>
     internal readonly record struct NextRun(string Task, DateTime When);
 
+    /// <summary>一次需要告诉用户的运行结果：任务名、退出码、是否超时。</summary>
+    internal readonly record struct Notification(string Task, int Exit, bool TimedOut);
+
+    /// <summary>需要弹通知时调用；托盘就绪后由外壳接上，headless 下保持 null。</summary>
+    public Action<Notification>? NotificationSink { get; set; }
+
     public Scheduler(RunnerConfig config, string pwsh, CancellationToken ct)
     {
         _config = config;
@@ -420,15 +426,26 @@ internal sealed class Scheduler
     private void Complete(TaskConfig task, TaskState st, int runId, int exitCode, bool timedOut, long durationMs)
     {
         bool rerunFired = false;
+        bool notify = false;
         string? rerunPolicy = null;
 
         lock (_gate)
         {
-            if (st.RunId == runId)
+            bool current = st.RunId == runId;
+
+            if (current)
             {
                 st.Process = null;
                 st.Job = null;
                 st.Running = false;
+
+                // 被本程序终止（overlap=kill、退出）时 runId 已换代或因停止而不再通知，
+                // 那次退出码也不能算进"上一次的退出码"
+                if (!_stopRequested)
+                {
+                    notify = ShouldNotify(task, _config, st.LastExit, exitCode);
+                    st.LastExit = exitCode;
+                }
             }
 
             bool rerun = st.Pending;
@@ -461,6 +478,27 @@ internal sealed class Scheduler
 
         if (rerunFired) Log.Event("rerun", ("task", task.name));
         if (rerunPolicy is not null) Log.Event("overlap", ("task", task.name), ("policy", rerunPolicy));
+
+        if (notify)
+        {
+            Log.Event("notify", ("task", task.name), ("exit", exitCode), ("timeout", timedOut));
+            NotificationSink?.Invoke(new Notification(task.name, exitCode, timedOut));
+        }
+    }
+
+    /// <summary>
+    /// 这次运行要不要弹通知。退出码先过 <c>notify_if_not</c>（优先），再过
+    /// <c>notify_if</c>（非空时当白名单），都不受限就算要弹；任务级列表覆盖顶层的。
+    /// 同时还要求退出码与上一次不同——连续同样的失败只提醒一次。
+    /// </summary>
+    internal static bool ShouldNotify(TaskConfig task, RunnerConfig config, int? lastExit, int exit)
+    {
+        if (lastExit == exit) return false;
+
+        if ((task.notify_if_not ?? config.notify_if_not).Contains(exit)) return false;
+
+        var allow = task.notify_if ?? config.notify_if;
+        return allow.Count == 0 || allow.Contains(exit);
     }
 
     /// <summary>重载失败后，按仍生效的旧配置恢复等待期间被延后的补跑（只认原来的任务实例）。</summary>
@@ -666,6 +704,7 @@ internal sealed class Scheduler
         public bool Running;
         public bool Pending;
         public int RunId;
+        public int? LastExit;
         public Process? Process;
         public ChildJob? Job;
     }
