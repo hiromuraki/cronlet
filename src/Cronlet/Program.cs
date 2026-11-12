@@ -95,7 +95,7 @@ internal static class Program
                             return "配置错误: " + ex.Message;
                         }
                     },
-                    () => scheduler.GetUpcoming(5),
+                    scheduler.GetUpcoming,
                     scheduler.RunNow);
             }
 

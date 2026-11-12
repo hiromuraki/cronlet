@@ -13,8 +13,6 @@ namespace HiroMuraki.Cronlet;
 /// </summary>
 internal sealed class TrayContext : IDisposable
 {
-    private const int UpcomingCount = 5;
-
     private readonly DefaultPopupMenuHandler _menu = new();
     private readonly NotifyIcon<DefaultPopupMenuHandler> _icon;
     private readonly string _configPath;
@@ -83,7 +81,7 @@ internal sealed class TrayContext : IDisposable
 
         _upcomingItems.Clear();
 
-        var runs = _upcoming().Take(UpcomingCount).ToList();
+        var runs = _upcoming();
         if (runs.Count == 0)
         {
             return;

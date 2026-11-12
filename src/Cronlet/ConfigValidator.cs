@@ -18,6 +18,8 @@ internal static class ConfigValidator
     /// </summary>
     public static string Validate(RunnerConfig config, CancellationToken ct = default)
     {
+        if (config.upcoming < 1) throw new Exception("upcoming 必须大于 0");
+
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var t in config.tasks)

@@ -519,17 +519,18 @@ internal sealed class Scheduler
     }
 
     /// <summary>
-    /// 队列里各任务的实际下次触发（含 jitter），按时间升序取前 count 条。
+    /// 队列里各任务的实际下次触发（含 jitter），按时间升序取前 <see cref="RunnerConfig.upcoming"/> 条。
     /// 每个任务只保留一条，所以返回条数最多是当前启用的任务数；
     /// 更靠后的触发时刻要等这次派发后重新加抖动，现在无法预知。
+    /// 条数在锁内读，重载后立即跟着新配置走。
     /// </summary>
-    public IReadOnlyList<NextRun> GetUpcoming(int count)
+    public IReadOnlyList<NextRun> GetUpcoming()
     {
-        if (count <= 0) return [];
-
         List<NextRun> queued;
+        int count;
         lock (_gate)
         {
+            count = _config.upcoming;
             queued = _queue.UnorderedItems.Select(x => new NextRun(x.Element.name, x.Priority)).ToList();
         }
 

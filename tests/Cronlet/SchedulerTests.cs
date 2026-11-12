@@ -132,6 +132,30 @@ public class SchedulerTests
     }
 
     [Fact]
+    public void GetUpcoming_respects_the_configured_count()
+    {
+        var config = new RunnerConfig
+        {
+            upcoming = 2,
+            tasks = [FarTask("a"), FarTask("b"), FarTask("c")],
+        };
+
+        using var cts = new CancellationTokenSource();
+        var scheduler = new Scheduler(config, "pwsh", cts.Token);
+        try
+        {
+            scheduler.Start();
+
+            Assert.Equal(2, scheduler.GetUpcoming().Count);
+        }
+        finally
+        {
+            cts.Cancel();
+            scheduler.Stop();
+        }
+    }
+
+    [Fact]
     public void RunNow_rejects_unknown_task()
     {
         using var cts = new CancellationTokenSource();

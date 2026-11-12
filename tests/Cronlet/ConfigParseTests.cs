@@ -36,6 +36,14 @@ public class ConfigParseTests
         => Assert.Empty(ConfigLoader.Parse("tasks = []").tasks);
 
     [Fact]
+    public void Top_level_upcoming_is_read()
+        => Assert.Equal(3, ConfigLoader.Parse("upcoming = 3").upcoming);
+
+    [Fact]
+    public void Upcoming_defaults_to_10()
+        => Assert.Equal(10, ConfigLoader.Parse("tasks = []").upcoming);
+
+    [Fact]
     public void Top_level_pwsh_is_read()
         => Assert.Equal("C:/tools/pwsh.exe", ConfigLoader.Parse("pwsh = \"C:/tools/pwsh.exe\"").pwsh);
 

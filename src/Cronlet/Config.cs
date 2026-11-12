@@ -16,6 +16,9 @@ internal sealed class RunnerConfig
     /// <summary>PowerShell 可执行文件；裸名字在 PATH 里找，也可以写完整路径。</summary>
     public string pwsh { get; set; } = ShellResolver.DefaultName;
 
+    /// <summary>托盘菜单顶部最多列出多少个待触发任务。</summary>
+    public int upcoming { get; set; } = 10;
+
     public List<TaskConfig> tasks { get; set; } = new();
 
     /// <summary>收集未识别的顶层键，用来把拼写错误暴露成配置错误。</summary>
@@ -66,6 +69,9 @@ internal static class ConfigLoader
 
 # 可选：指定 PowerShell 可执行文件（默认在 PATH 里找 pwsh）
 # pwsh = "S:/tools/pwsh/pwsh.exe"
+
+# 可选：托盘菜单顶部最多列出多少个待触发任务（默认 10）
+# upcoming = 10
 
 [[tasks]]
 name = "example"

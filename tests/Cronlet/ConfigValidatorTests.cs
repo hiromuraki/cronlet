@@ -23,6 +23,14 @@ public class ConfigValidatorTests
     public void Valid_config_passes() => Validate(Wrap(Valid()));
 
     [Fact]
+    public void Upcoming_must_be_positive()
+    {
+        var config = Wrap(Valid());
+        config.upcoming = 0;
+        Assert.Contains("upcoming", Assert.Throws<Exception>(() => Validate(config)).Message);
+    }
+
+    [Fact]
     public void Missing_name_is_rejected()
     {
         var task = Valid();
