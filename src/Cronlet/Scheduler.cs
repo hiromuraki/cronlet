@@ -24,7 +24,6 @@ internal sealed class Scheduler
     private TaskCompletionSource _wake = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource? _idle;
     private RunnerConfig _config;
-    private string _pwsh;
     private int _running;
     private int _runSeq;
     private bool _reloading;
@@ -40,10 +39,9 @@ internal sealed class Scheduler
     /// <summary>需要弹通知时调用；托盘就绪后由外壳接上，headless 下保持 null。</summary>
     public Action<Notification>? NotificationSink { get; set; }
 
-    public Scheduler(RunnerConfig config, string pwsh, CancellationToken ct)
+    public Scheduler(RunnerConfig config, CancellationToken ct)
     {
         _config = config;
-        _pwsh = pwsh;
         _ct = ct;
     }
 
@@ -98,7 +96,7 @@ internal sealed class Scheduler
     /// 运行期重载：暂停派发，等所有正在运行的任务结束（最多 30s），
     /// 再原子替换配置并重排。返回 null 表示成功，否则返回错误信息。
     /// </summary>
-    public async Task<string?> ReloadAsync(RunnerConfig newConfig, string pwsh)
+    public async Task<string?> ReloadAsync(RunnerConfig newConfig)
     {
         Task? idle = null;
         lock (_gate)
@@ -138,7 +136,6 @@ internal sealed class Scheduler
             {
                 _states.Clear();
                 _config = newConfig;
-                _pwsh = pwsh;
                 _queue.Clear();
                 _deferredReruns.Clear(); // 新配置会重新排队，旧的补跑作废
                 foreach (var t in _config.tasks.Where(x => x.enabled))
@@ -297,7 +294,7 @@ internal sealed class Scheduler
                 Log.Event("job-create-failed", ("task", task.name), ("error", jobError));
             }
 
-            var psi = BuildStartInfo(task, _pwsh);
+            var psi = BuildStartInfo(task);
 
             proc = new Process { StartInfo = psi };
 
@@ -676,28 +673,26 @@ internal sealed class Scheduler
         tcs.TrySetResult();
     }
 
-    internal static ProcessStartInfo BuildStartInfo(TaskConfig task, string pwsh)
-    {
-        var psi = new ProcessStartInfo
+    /// <summary>
+    /// 任务的启动参数：整条 command 原样交给 cmd.exe。"/s /c" 让 cmd 只剥掉外面这一对
+    /// 引号，命令内部的引号（例如带空格的路径）保持原样。command 里的重定向和管道
+    /// 因此按 shell 语义解释。
+    /// </summary>
+    internal static ProcessStartInfo BuildStartInfo(TaskConfig task) =>
+        new()
         {
-            FileName = pwsh,
+            FileName = Environment.GetEnvironmentVariable("ComSpec") is { Length: > 0 } comspec
+                ? comspec
+                : "cmd.exe",
+            Arguments = "/s /c \"" + task.command + "\"",
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
+            WorkingDirectory = !string.IsNullOrWhiteSpace(task.cwd) ? task.cwd! : Paths.Base,
         };
-        psi.ArgumentList.Add("-NoProfile");
-        psi.ArgumentList.Add("-NonInteractive");
-        psi.ArgumentList.Add("-ExecutionPolicy");
-        psi.ArgumentList.Add("Bypass");
-        psi.ArgumentList.Add("-Command");
-        psi.ArgumentList.Add(CommandWrapper.ForCommand(task.command));
-
-        psi.WorkingDirectory = !string.IsNullOrWhiteSpace(task.cwd) ? task.cwd! : Paths.Base;
-        return psi;
-    }
 
     private sealed class TaskState
     {

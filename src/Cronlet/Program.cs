@@ -44,11 +44,10 @@ internal static class Program
         using var instanceHandle = instance;
 
         RunnerConfig config;
-        string pwsh;
         try
         {
             config = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-            pwsh = ConfigValidator.Validate(config);
+            ConfigValidator.Validate(config);
         }
         catch (Exception ex)
         {
@@ -58,7 +57,7 @@ internal static class Program
         }
 
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(config, pwsh, cts.Token);
+        var scheduler = new Scheduler(config, cts.Token);
         scheduler.Start();
         Log.Event("start", ("headless", headless), ("tasks", config.tasks.Count(x => x.enabled)));
 
@@ -81,10 +80,8 @@ internal static class Program
                         try
                         {
                             var newConfig = ConfigLoader.LoadOrCreate(ConfigLoader.ConfigPath);
-                            // 校验可能包含一次 PowerShell 探测，放到后台线程，别卡住托盘
-                            string newPwsh = await Task.Run(
-                                () => ConfigValidator.Validate(newConfig, cts.Token), cts.Token);
-                            string? error = await scheduler.ReloadAsync(newConfig, newPwsh);
+                            ConfigValidator.Validate(newConfig);
+                            string? error = await scheduler.ReloadAsync(newConfig);
                             if (error is not null) return error;
                             Log.Event("config-reload", ("tasks", newConfig.tasks.Count(x => x.enabled)));
                             return null;

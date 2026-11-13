@@ -19,28 +19,28 @@ public class SchedulerTests
     };
 
     private static void Validate(TaskConfig task) =>
-        ConfigValidator.Validate(new RunnerConfig { tasks = [task] }, TestContext.Current.CancellationToken);
+        ConfigValidator.Validate(new RunnerConfig { tasks = [task] });
 
     [Fact]
-    public void Command_is_passed_to_pwsh_verbatim()
+    public void Command_is_handed_to_cmd_verbatim()
     {
         var task = Task();
         Validate(task);
 
-        var psi = Scheduler.BuildStartInfo(task, "pwsh");
-        Assert.Equal(CommandWrapper.ForCommand("'hello'"), psi.ArgumentList[^1]);
+        var psi = Scheduler.BuildStartInfo(task);
+        Assert.Equal("/s /c \"" + task.command + "\"", psi.Arguments);
         Assert.Equal(Paths.Base, psi.WorkingDirectory);
     }
 
     [Fact]
-    public void Command_with_spaces_is_not_split()
+    public void Command_with_quotes_keeps_them()
     {
         var task = Task();
-        task.command = "Write-Output 'a b'";
+        task.command = "pwsh -File \"C:/tools/a b/x.ps1\"";
         Validate(task);
 
-        var psi = Scheduler.BuildStartInfo(task, "pwsh");
-        Assert.Equal(CommandWrapper.ForCommand("Write-Output 'a b'"), psi.ArgumentList[^1]);
+        var psi = Scheduler.BuildStartInfo(task);
+        Assert.Equal("/s /c \"pwsh -File \"C:/tools/a b/x.ps1\"\"", psi.Arguments);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public class SchedulerTests
             task.cwd = dir;
             Validate(task);
 
-            var psi = Scheduler.BuildStartInfo(task, "pwsh");
+            var psi = Scheduler.BuildStartInfo(task);
             Assert.Equal(dir, psi.WorkingDirectory);
         }
         finally
@@ -113,7 +113,7 @@ public class SchedulerTests
         };
 
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(config, "pwsh", cts.Token);
+        var scheduler = new Scheduler(config, cts.Token);
         try
         {
             scheduler.Start();
@@ -141,7 +141,7 @@ public class SchedulerTests
         };
 
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(config, "pwsh", cts.Token);
+        var scheduler = new Scheduler(config, cts.Token);
         try
         {
             scheduler.Start();
@@ -159,7 +159,7 @@ public class SchedulerTests
     public void RunNow_rejects_unknown_task()
     {
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, cts.Token);
 
         var result = scheduler.RunNow("missing");
 
@@ -172,7 +172,7 @@ public class SchedulerTests
     {
         using var cts = new CancellationTokenSource();
         var scheduler = new Scheduler(
-            new RunnerConfig { tasks = [FarTask("probe", enabled: false)] }, "pwsh", cts.Token);
+            new RunnerConfig { tasks = [FarTask("probe", enabled: false)] }, cts.Token);
 
         var result = scheduler.RunNow("probe");
 
@@ -184,7 +184,7 @@ public class SchedulerTests
     public void RunNow_starts_the_task()
     {
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, cts.Token);
         try
         {
             var result = scheduler.RunNow("probe");
@@ -269,7 +269,7 @@ public class SchedulerTests
         var config = new RunnerConfig { tasks = [task] };
 
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(config, "pwsh", cts.Token);
+        var scheduler = new Scheduler(config, cts.Token);
         using var fired = new SemaphoreSlim(0);
         Scheduler.Notification? seen = null;
         scheduler.NotificationSink = n => { seen = n; fired.Release(); };
@@ -296,10 +296,10 @@ public class SchedulerTests
     {
         using var cts = new CancellationTokenSource();
 
-        // 配置校验只看 pwsh 的名字，进程能不能起来要到 RunNow 才知道
-        string missing = Path.Combine(
-            Path.GetTempPath(), "cronlet-tests", Guid.NewGuid().ToString("N"), "pwsh.exe");
-        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, missing, cts.Token);
+        // 工作目录不存在时 Process.Start 会抛，配置校验在这里被绕过
+        var task = FarTask("probe");
+        task.cwd = Path.Combine(Path.GetTempPath(), "cronlet-missing-" + Guid.NewGuid().ToString("N"));
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [task] }, cts.Token);
         try
         {
             var result = scheduler.RunNow("probe");
@@ -318,7 +318,7 @@ public class SchedulerTests
     public void RunNow_rejects_after_stop()
     {
         using var cts = new CancellationTokenSource();
-        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, "pwsh", cts.Token);
+        var scheduler = new Scheduler(new RunnerConfig { tasks = [FarTask("probe")] }, cts.Token);
         scheduler.Stop();
 
         var result = scheduler.RunNow("probe");

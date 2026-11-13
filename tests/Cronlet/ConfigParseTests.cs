@@ -71,10 +71,6 @@ public class ConfigParseTests
     }
 
     [Fact]
-    public void Top_level_pwsh_is_read()
-        => Assert.Equal("C:/tools/pwsh.exe", ConfigLoader.Parse("pwsh = \"C:/tools/pwsh.exe\"").pwsh);
-
-    [Fact]
     public void Duplicate_key_is_rejected()
         => Assert.ThrowsAny<Exception>(() => ConfigLoader.Parse("[[tasks]]\nenabled = false\nenabled = true"));
 

@@ -6,8 +6,7 @@ public class ConfigValidatorTests
 {
     private static RunnerConfig Wrap(params TaskConfig[] tasks) => new() { tasks = [.. tasks] };
 
-    private static void Validate(RunnerConfig config) =>
-        ConfigValidator.Validate(config, TestContext.Current.CancellationToken);
+    private static void Validate(RunnerConfig config) => ConfigValidator.Validate(config);
 
     private static TaskConfig Valid(string name = "job") => new()
     {

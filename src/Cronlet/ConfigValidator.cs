@@ -13,10 +13,10 @@ internal static class ConfigValidator
     private static readonly TimeZoneInfo Tz = TimeZoneInfo.Local;
 
     /// <summary>
-    /// 校验配置并返回解析后的 PowerShell 路径。有启用任务时找不到 PowerShell
-    /// 就算配置错误——否则启动会"成功"，但每个任务都跑不起来。
+    /// 校验配置。命令本身交给 cmd 执行，Cronlet 不预检任务能不能跑起来——
+    /// 那要在第一次运行失败时以退出码和通知的形式暴露。
     /// </summary>
-    public static string Validate(RunnerConfig config, CancellationToken ct = default)
+    public static void Validate(RunnerConfig config)
     {
         if (config.upcoming < 1) throw new Exception("upcoming 必须大于 0");
 
@@ -56,25 +56,6 @@ internal static class ConfigValidator
             if (t.enabled && cron.GetNextOccurrence(DateTime.UtcNow, Tz) is null)
                 throw new Exception($"任务 {label}: cron 永远不会触发 ({t.cron})");
         }
-
-        return ResolveShell(config, ct);
-    }
-
-    private static string ResolveShell(RunnerConfig config, CancellationToken ct)
-    {
-        string shell = string.IsNullOrWhiteSpace(config.pwsh) ? ShellResolver.DefaultName : config.pwsh;
-
-        if (!config.tasks.Any(t => t.enabled)) return shell;
-
-        string? resolved = ShellResolver.Resolve(shell);
-        if (resolved is null)
-            throw new Exception($"找不到 PowerShell: {shell}（可用 pwsh 配置项指定完整路径）");
-
-        var probe = ShellResolver.Probe(resolved, ct);
-        if (!probe.Ok)
-            throw new Exception($"PowerShell 无法运行: {resolved}（{probe.Error}）");
-
-        return resolved;
     }
 
     /// <summary>任务名直接拼进日志文件名，所以只允许不会引入路径语义的字符。</summary>

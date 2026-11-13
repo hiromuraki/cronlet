@@ -13,9 +13,6 @@ internal partial class TomlContext : TomlSerializerContext;
 /// </summary>
 internal sealed class RunnerConfig
 {
-    /// <summary>PowerShell 可执行文件；裸名字在 PATH 里找，也可以写完整路径。</summary>
-    public string pwsh { get; set; } = ShellResolver.DefaultName;
-
     /// <summary>托盘菜单顶部最多列出多少个待触发任务。</summary>
     public int upcoming { get; set; } = 10;
 
@@ -70,17 +67,15 @@ internal static class ConfigLoader
 #   name        任务名（唯一，日志里用它标识）
 #               只允许 A-Z a-z 0-9 _ -，长度 1-128
 #   enabled     是否启用
-#   command     pwsh 命令；相对路径以 exe 目录为当前目录
-#               例：./scripts/login.ps1   或   echo hello
+#   command     完整命令行，交给 cmd 执行；相对路径以 exe 目录为当前目录
+#               例：pwsh -File ./scripts/login.ps1
+#                   python -X utf8 ./scripts/check.py
 #   cron        5 段 unix cron：分 时 日 月 周（本地时区）
 #   jitter      0..jitter 秒随机延迟；会被限制在下一次触发之前
 #   timeout     秒；0 表示不限制，超时杀进程树
 #   overlap     上次未结束时的策略：skip | kill | queue
 #   cwd         工作目录；空则用 exe 目录
 # ==============================================================
-
-# 可选：指定 PowerShell 可执行文件（默认在 PATH 里找 pwsh）
-# pwsh = "S:/tools/pwsh/pwsh.exe"
 
 # 可选：托盘菜单顶部最多列出多少个待触发任务（默认 10）
 # upcoming = 10
@@ -96,7 +91,7 @@ internal static class ConfigLoader
 [[tasks]]
 name = "example"
 enabled = false
-command = "./scripts/example.ps1"   # 也可以直接写一条命令，例如 "echo hello"
+command = 'pwsh -File ./scripts/example.ps1'   # 也可以直接写一条命令，例如 'echo hello'
 cron = "*/5 * * * *"                # 分 时 日 月 周（本地时区）
 jitter = 10                         # 0..jitter 秒随机延迟，不会推过下一次触发
 timeout = 60                        # 秒，0 表示不限制
